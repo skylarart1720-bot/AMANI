@@ -1,5 +1,7 @@
 # AMANI
 
+For GitHub-to-Vercel setup, backend hosting and moderator login configuration, see [VERCEL.md](VERCEL.md).
+
 A Ghana-first rights, safety and wellbeing support application based on the 14-page `Amani_Line_Rights_Support_System_Blueprint.pdf` and `blueprint_text.txt`.
 
 ## Run on this Windows computer
