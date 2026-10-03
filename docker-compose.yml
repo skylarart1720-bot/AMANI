@@ -1,0 +1,61 @@
+services:
+  web:
+    build: ./apps/web
+    restart: unless-stopped
+    ports: ["127.0.0.1:3000:3000"]
+    environment:
+      ORCHESTRATOR_URL: http://orchestrator:8000
+    depends_on: [orchestrator]
+
+  moderator-dashboard:
+    build: ./apps/moderator-dashboard
+    restart: unless-stopped
+    ports: ["127.0.0.1:3100:3002"]
+    environment:
+      ORCHESTRATOR_URL: http://orchestrator:8000
+      COOKIE_SECURE: "true"
+    depends_on: [orchestrator]
+
+  orchestrator:
+    build: ./apps/orchestrator
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      PROJECT_ROOT: /app
+      AMANI_DATA_DIR: /data
+      CHAT_ENCRYPTION_KEY: ${CHAT_ENCRYPTION_KEY:?Set CHAT_ENCRYPTION_KEY}
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?Set ADMIN_API_TOKEN}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      URL_SAFETY_URL: http://url-safety:8001
+    volumes: ["support-data:/data"]
+    depends_on: [url-safety]
+
+  url-safety:
+    build: ./services/url-safety
+    restart: unless-stopped
+    environment:
+      SAFE_BROWSING_API_KEY: ${SAFE_BROWSING_API_KEY:-}
+      VIRUSTOTAL_API_KEY: ${VIRUSTOTAL_API_KEY:-}
+
+  whatsapp-gateway:
+    build: ./apps/whatsapp-gateway
+    restart: unless-stopped
+    ports: ["127.0.0.1:8300:3001"]
+    environment:
+      PROJECT_ROOT: /app
+      AMANI_DATA_DIR: /data
+      ORCHESTRATOR_URL: http://orchestrator:8000
+      CHAT_ENCRYPTION_KEY: ${CHAT_ENCRYPTION_KEY:?Set CHAT_ENCRYPTION_KEY}
+      WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-disabled}
+      META_WHATSAPP_TOKEN: ${META_WHATSAPP_TOKEN:-}
+      META_WHATSAPP_PHONE_NUMBER_ID: ${META_WHATSAPP_PHONE_NUMBER_ID:-}
+      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      META_WHATSAPP_API_VERSION: ${META_WHATSAPP_API_VERSION:-}
+    volumes: ["support-data:/data"]
+    depends_on: [orchestrator]
+
+volumes:
+  support-data:

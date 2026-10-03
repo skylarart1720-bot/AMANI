@@ -1,0 +1,631 @@
+RIGHTS & WELLBEING NETWORK  |  Digital Rights & Support Blueprint
+Page 1
+RIGHTS & WELLBEING NETWORK
+A Digital Rights, Safety & Wellbeing
+Support System
+System Blueprint & Technical Architecture — Website, AI Chatbot & Anonymous
+WhatsApp Helpline
+Prepared as a build-ready specification for engineering teams and AI coding assistants (e.g. GitHub Copilot).
+Grounded in the working areas of Amnesty International and the standards of the United Nations (UN), World
+Health Organization (WHO), and recognised digital-rights and child-safeguarding organisations. Version 1.0.
+Field
+Detail
+Product name (working title)
+Amani Line — "Amani" (Swahili/Twi-adjacent for peace) Rights & Wellbeing
+Support Network
+Channels
+Public website · Web chat widget · Anonymous WhatsApp number · (Phase 2)
+SMS/USSD fallback
+Core purpose
+Give people confidential, non-judgemental information, verified referrals and links
+to real human help across 9 rights & wellbeing themes
+Primary users
+Youth activists, protesters, students, journalists, human rights defenders, LGBTQ+
+& gender-rights advocates, people in mental-health distress, people targeted by
+online harm, and men seeking peer support
+Geographic scope
+Ghana-first (local laws, local referral bodies, local languages), extensible to any
+country via a configurable referral database
+Guiding frameworks
+Amnesty International thematic priorities · UN Guiding Principles on Business &
+Human Rights · WHO mental-health & safe-messaging guidance · UNHRC digital
+rights resolutions · GDPR & Ghana Data Protection Act, 2012 (Act 843)
+
+RIGHTS & WELLBEING NETWORK  |  Digital Rights & Support Blueprint
+Page 2
+Contents
+
+1. Vision & Problem Statement
+
+2. Design Principles & Ethical Guardrails
+
+3. The Nine Support Pillars (mapped from the research topics)
+
+4. User Journey (how a real person uses the system)
+
+5. System Architecture Overview
+
+6. Recommended Technology Stack
+
+7. AI / Chatbot Behaviour Specification
+
+8. Verified-Information & Fact-Sourcing Pipeline
+
+9. Anonymous WhatsApp Helpline Design
+
+10. Link & Phishing Safety Module
+
+11. Localised Referral Directory (Ghana + International)
+
+12. Privacy, Security & End-to-End Encryption
+
+13. Brand & UI/UX Guidelines (Amnesty-Aligned)
+
+14. Data Model (Core Entities)
+
+15. Build Roadmap (MVP → Phase 3)
+
+16. Governance, Safeguarding & Partnerships
+
+17. Risks & Mitigations
+
+18. Brief for GitHub Copilot / Build Agent
+
+19. Reference Standards & Sources
+
+RIGHTS & WELLBEING NETWORK  |  Digital Rights & Support Blueprint
+Page 3
+1. Vision & Problem Statement
+Young people in Ghana and beyond who engage in protest, activism, digital expression, gender advocacy,
+environmental justice, mental-health struggles or governance participation often face the same three gaps: they
+don't know their rights, they don't know who to trust for information, and they don't know a safe, anonymous way to
+ask for help. Misinformation, phishing and online harassment compound the risk. This system closes that gap with
+a single, trustworthy front door — a website and an anonymous WhatsApp line — backed by an AI assistant that
+informs, reassures and refers, but never replaces professional or emergency services.
+The system deliberately follows Amnesty International's own working method: research the facts, protect the
+individual, and mobilise the appropriate institutions — rather than tell people what action to personally take. It also
+names and pushes back on harms Amnesty and partner bodies track closely in Ghana and the wider region,
+including violent responses to protest, attacks on civic space, digital surveillance, and harmful traditional practices
+such as witchcraft accusations against women and older persons.
+2. Design Principles & Ethical Guardrails
+
+Inform, don't instruct: the AI explains rights, laws and options, then refers to a real body or hotline — it never
+tells a user to personally carry out a specific risky action (e.g. "go to the protest", "confront your abuser").
+
+Anonymous by default: no phone-number-to-identity linking is stored beyond what WhatsApp itself requires
+operationally; conversations are pseudonymous unless the user actively opts to share identifying details to be
+connected to a named contact.
+
+Do no harm / safe messaging: for suicide, self-harm and gender-based violence topics, the assistant follows
+WHO/International Association for Suicide Prevention (IASP) safe-messaging principles — no method or means
+detail, calm and hopeful tone, always paired with a live helpline or professional referral.
+
+Human-in-the-loop escalation: any message indicating imminent danger (self-harm, threat of violence, arrest
+in progress, trafficking) is flagged for priority human moderator handoff, never left to the bot alone.
+
+Neutrality on contested politics: the system presents rights, laws and verified facts, not partisan opinions; it
+never tells a user which political position to hold, only what their legal rights and safety options are.
+
+Global & local law together: every answer that touches rights pairs the Ghanaian legal position with the
+applicable international instrument (ICCPR, African Charter, UNCRC, CEDAW, etc.).
+
+Radical transparency about limits: the bot always discloses that it is an AI, that it is not a lawyer, doctor or
+counsellor, and that it can connect the user to one.
+
+Privacy & consent first: data minimisation, encryption in transit and at rest, a visible "delete my chat history"
+control, and no advertising or data resale — modelled on Amnesty's own Human Rights Friendly design
+commitments and human-rights-based approach to technology.
+
+Inclusive & intersectional: content and referral paths are reviewed for gender, disability, LGBTQ+, ethnic and
+religious inclusiveness, including a dedicated, non-judgemental peer-support pathway for men and boys ("Men's
+Circle") alongside the feminist/gender-justice pathway — not positioned as opposing tracks, but as two doors
+into the same support ecosystem.
+
+RIGHTS & WELLBEING NETWORK  |  Digital Rights & Support Blueprint
+Page 4
+3. The Nine Support Pillars
+Mapped directly from the research-group topics, plus two additions you specified (men's peer support and anti-witchcraft-accusation
+work, which sits inside Amnesty's older-persons & women's rights programme).
+Pillar
+What the system actually does
+1. Protest Rights & Civic
+Freedom
+Know-your-rights explainers (arrest, assembly, police conduct), legal aid contacts,
+real-time "what to do if detained" referral (not instructions to act) — sourced from
+Amnesty, CHRAJ, Ghana Police Service standing orders.
+2. Activism & Youth-Led
+Movements
+Toolkits on organising safely, digital security basics for organisers, directory of
+accredited civil-society networks (e.g. CDD-Ghana, WACSI, STAR-Ghana).
+3. Suicide Prevention & Youth
+Mental Health
+WHO-aligned safe-messaging responses, always paired with a live crisis line
+(Ghana Mental Health Authority helpline, Mind Freedom Ghana), professional
+referral, never method/means detail.
+4. Climate Justice &
+Environmental Rights
+Verified climate-rights explainers, links to EPA Ghana, 350Africa, Amnesty's
+climate-justice programme, reporting channel for environmental harms (e.g.
+galamsey-linked abuses).
+5. Digital Rights, Online Safety
+& Freedom of Expression
+Phishing/scam-link checker, digital-security how-tos, cyberbullying and doxxing
+referral, Ghana Cybersecurity Authority & Data Protection Commission contacts,
+Access Now Digital Security Helpline.
+6. Youth Participation in
+Governance
+Civic-education content (NCCE-aligned), voter and local-government participation
+guides, links to Ghana Youth Authority & parliamentary petition channels.
+7. Human Rights Defenders'
+Safety & Security
+Rapid-referral to Front Line Defenders, Amnesty Urgent Action network, West
+Africa Human Rights Defenders Network, physical/digital security check-lists.
+8. Gender, Intersectionality &
+Feminist Activism
+GBV and harassment referral (DOVVSU, Ark Foundation, WiLDAF), reporting
+pathways, education on CEDAW/Maputo Protocol rights.
+9. Men's Circle (Positive
+Masculinity Support)
+Non-judgemental peer-support entry for men facing violence, addiction, fatherhood
+strain, or mental-health stigma; referral to Ghana Mental Health Authority,
+MenEngage Africa, licensed counsellors — framed as complementary to, not
+competing with, gender-justice work.
+A cross-cutting tenth theme — combating witchcraft accusations and "witch camp" abuses — is woven
+through pillars 1, 8 and 9 as a standing content module, reflecting Amnesty Ghana's active campaigning on this
+issue.
+
+RIGHTS & WELLBEING NETWORK  |  Digital Rights & Support Blueprint
+Page 5
+4. User Journey — How a Real Person Uses the System
+
+Discovery: user finds the WhatsApp number or website via social media, campus posters, or an
+Amnesty/partner-organisation referral.
+
+First contact (anonymous): user texts the WhatsApp number or opens the web chat. No sign-up, no name
+required. Bot greets them, states clearly it is an AI, explains confidentiality, and asks (via quick-reply buttons)
+which of the 9 pillars is closest to their need — or lets them type freely.
+
+Triage: a lightweight safety-classifier scans the message for urgent-risk signals (self-harm, imminent violence,
+minors at risk, active detention). Urgent cases skip straight to a human-handoff queue with a locally relevant
+emergency number surfaced immediately.
+
+Information + referral: for non-urgent queries, the AI retrieves verified information (see Section 8) and gives a
+short, plain-language answer, then offers 1–3 concrete next steps: a verified link, a hotline, an organisation's
+contact, or "talk to a real person" handoff.
+
+Localisation: if the user shares a region (optional, never demanded), the bot narrows referrals to that region's
+police unit, hospital, CSO chapter, or legal-aid office.
+
+Optional identification: only if the user chooses to be connected to a named case-worker (e.g. for legal aid
+follow-up) does the system ask for contact details, under an explicit, separate consent step, stored encrypted
+and deletable.
+
+Exit & follow-up: user can end the chat anytime; a "forget this conversation" command permanently deletes
+the anonymous thread. Optional satisfaction/feedback survey (2 taps) improves the service without collecting
+identity.
+5. System Architecture Overview
+The system is organised in five layers:
+Layer
+Components
+1. Channel layer
+Public website (React) · Web chat widget · WhatsApp Cloud API number · (Phase
+2) SMS/USSD gateway
+2. Conversation & orchestration
+layer
+API gateway → Conversation Orchestrator (intent routing, safety triage, session
+state) → Human-handoff queue for moderators/partner-org staff
+3. AI / Knowledge layer
+LLM (guarded system prompt + tool-calling) + Retrieval-Augmented Generation
+(RAG) over a curated, versioned knowledge base; separate lightweight
+safety-classifier model for risk triage
+4. Trust & safety services
+URL/phishing scanner (Safe Browsing/VirusTotal APIs) · Content moderation filter
+· Rate-limiting & abuse detection · Human moderator dashboard
+5. Data & integration layer
+Encrypted conversation store (short-retention, anonymised) · Referral-directory
+database (organisations, hotlines, geocoded) · Content-source registry
+(allow-listed publishers) · Admin CMS for partner organisations to keep referral
+data current
+Simplified request flow
+User message (WhatsApp/Web) → API Gateway → Safety Triage Classifier → if urgent: instant crisis-resource
+message + human moderator alert; if routine: Conversation Orchestrator → RAG retrieval from Knowledge Base +
+Referral Directory → LLM composes a grounded, referral-first reply → Trust & Safety filter (checks for banned
+advice patterns, verifies any link against the phishing scanner) → reply sent to user → anonymised interaction log
+stored for quality review only.
+
+RIGHTS & WELLBEING NETWORK  |  Digital Rights & Support Blueprint
+Page 6
+6. Recommended Technology Stack
+Layer
+Recommended choice
+Website / front-end
+React + TypeScript (Next.js), Tailwind CSS design system in Amnesty colours, WCAG
+2.2 AA accessibility, multilingual (English, Twi, Ga, Ewe, Hausa) via i18next
+Web chat widget
+Embedded React chat component talking to the same Conversation API used by
+WhatsApp, so logic lives once and renders twice
+Messaging channel
+WhatsApp Business Platform (Cloud API) via Meta directly or an approved Business
+Solution Provider (e.g. Twilio, 360dialog, ChatDaddy); dedicated, published "Support
+Line" number with a verified green-tick business profile clearly stating it is an
+anonymous support & information service, not an emergency line
+Backend / orchestration
+Node.js (NestJS) or Python (FastAPI) microservices; message broker (e.g. Redis
+Streams or RabbitMQ) between channel webhooks and the orchestrator
+AI / LLM layer
+Claude or GPT-class model via API with a strict, versioned system prompt + tool use;
+RAG via a vector database (pgvector on Postgres, or a managed vector store) over the
+curated knowledge base; a smaller/faster classifier model (or fine-tuned lightweight
+model) purely for risk triage, kept separate from the conversational model for
+auditability
+Knowledge base & CMS
+Headless CMS (e.g. Strapi) so legal officers/partner NGOs can edit rights information
+and referral contacts without touching code; every fact entry stores its source URL,
+publisher, and last-verified date
+Referral directory
+PostgreSQL with PostGIS extension for location-aware matching of
+hotlines/organisations to a user's stated region
+Link/phishing safety
+Google Safe Browsing API + VirusTotal API + PhishTank feed, aggregated behind a
+single internal "URL reputation" microservice
+Security
+OAuth2/JWT for admin access, Signal-protocol-style E2E encryption for the web chat
+transport, TLS 1.3 everywhere, secrets in a managed vault (e.g. AWS Secrets
+Manager / HashiCorp Vault)
+Infrastructure
+Cloud-hosted (AWS, Azure, or Google Cloud) with data residency consideration for
+Ghana/EU; containerised services (Docker + Kubernetes) for independent scaling of
+the AI, safety and channel layers
+Observability
+Centralised logging with PII redaction, anonymised analytics dashboard
+(Metabase/Looker) tracking topic volume, escalation rate and referral click-through —
+never individual identities
+
+RIGHTS & WELLBEING NETWORK  |  Digital Rights & Support Blueprint
+Page 7
+7. AI / Chatbot Behaviour Specification
+The assistant's system prompt and tool-access should encode the following behaviour rules as hard constraints,
+independent of what a user asks it to do:
+
+Always identify itself as an AI assistant, never impersonate a human counsellor or lawyer.
+
+Answer only from the verified knowledge base and referral directory (RAG-grounded) — it does not freely
+generate legal, medical or safety claims from unguided model memory.
+
+For every substantive answer, name at least one concrete referral (organisation, hotline, or official source) the
+user can contact next.
+
+Refuse to give operational instructions for risky personal action (e.g. how to evade police, how to confront an
+abuser, self-harm methods); instead it explains rights/options and refers to a body equipped to help.
+
+On any signal of imminent risk to life (self-harm intent, active violence, a minor in danger), it immediately
+surfaces the relevant crisis line and flags the conversation for human moderator review, without waiting for
+further prompting.
+
+Uses a warm, calm, non-judgemental tone; avoids alarmist or graphic language, consistent with WHO
+safe-messaging guidance.
+
+Declines to take or endorse a partisan political position; presents rights and facts, not opinions on contested
+policy questions.
+
+Supports short free-text queries and a structured menu (quick-reply buttons on WhatsApp) so users who don't
+know what to type can still navigate the 9 pillars.
+
+Logs a machine-readable "outcome tag" per conversation (e.g. information-given, referred-to-hotline,
+escalated-to-human) for anonymised service reporting — never logs raw personal identifiers unless the user
+explicitly opted into being contacted.
+8. Verified-Information & Fact-Sourcing Pipeline
+Rather than letting the AI browse the open internet live for every answer (which risks pulling in unverified or
+manipulated content), the recommended design uses a curated-then-augmented pipeline:
+
+Allow-listed source registry: a maintained list of trusted publishers — Amnesty International, UN OHCHR,
+WHO, UNICEF, UNDP, Ghana's CHRAJ, Ghana Police Service, Ghana Health Service, Mental Health
+Authority, Ghana Data Protection Commission, reputable Ghanaian outlets (GhanaWeb, Joy News,
+MyJoyOnline, Graphic) and recognised legal-aid bodies.
+
+Scheduled ingestion: a background job periodically fetches updates from these sources, extracts the relevant
+facts, and stores them with source URL, publish date and a "last verified" timestamp — this becomes the RAG
+knowledge base the chatbot draws from.
+
+Human review gate: a small editorial/legal team (partner NGO staff or volunteer lawyers) reviews new or
+changed entries before they go live, especially for legal-rights content, mirroring how Amnesty's own research is
+vetted before publication.
+
+Live web-search fallback (optional, rate-limited): for fast-moving news (e.g. a new law, a breaking protest
+event), the system can call a live search API, but results are shown as "unverified — for your awareness" with a
+link, clearly separated from the vetted knowledge-base answers, until reviewed and promoted into the
+permanent knowledge base.
+
+Freshness indicator: every answer footnotes "last verified on [date]" so users can judge currency.
+
+RIGHTS & WELLBEING NETWORK  |  Digital Rights & Support Blueprint
+Page 8
+9. Anonymous WhatsApp Helpline Design
+
+Number & onboarding: a single published WhatsApp Business number; first message triggers an automated
+welcome explaining what the service is, that it is anonymous, that it is not an emergency service, and offering a
+menu of the 9 pillars plus "talk to a human" and "emergency numbers" quick replies.
+
+Anonymity model: WhatsApp requires a phone number to deliver messages, so true anonymity from Meta/the
+telecom is not possible — the system's commitment is that the platform itself does not store the user's name,
+does not link the number to any other identity system, encrypts the number at rest, and purges numbers from
+analytics after a short retention window (e.g. 30–90 days) unless the user has opted into ongoing case support.
+
+Session & language: language auto-detected or chosen at onboarding (English, Twi, Ga, Ewe, Hausa);
+session state kept only long enough to hold a conversation, not built into a persistent CRM profile.
+
+Escalation path: a "talk to a human" quick reply hands off to a rotating roster of trained volunteers/partner-org
+staff via a moderator dashboard, with the AI conversation history shown to the human agent only after user
+consent (or automatically in a flagged imminent-risk case, disclosed to the user as standard practice).
+
+Rate & abuse handling: automated throttling and basic spam/abuse detection so the line cannot be flooded or
+used to harass staff; clearly stated acceptable-use notice.
+
+Cost model: WhatsApp Business Platform (Cloud API) charges per conversation/message and is typically
+accessed through a Meta-approved Business Solution Provider (BSP) such as Twilio, 360dialog or a regional
+provider — budget for BSP platform fees plus Meta's per-message/category charges, which should be modelled
+against expected monthly volume before committing to a provider.
+10. Link & Phishing Safety Module
+Supports pillar 5 (Digital Rights & Online Safety) by letting a user paste a suspicious link, phone number, or
+screenshot text and get a safety verdict:
+
+URLs are checked against Google Safe Browsing and VirusTotal reputation APIs, plus a locally maintained
+block-list of known Ghanaian scam/phishing campaigns.
+
+The bot returns a plain-language verdict ("this link shows signs of phishing — do not enter your details") plus a
+short explanation of the red flags, never technical jargon.
+
+For confirmed scams targeting a wide public (e.g. a fake mobile-money promotion), the system can flag the
+case to the Ghana Cybersecurity Authority's incident-reporting channel with the user's consent.
+
+The module never itself "fixes" a compromised account; it always refers the user to the relevant provider's
+official recovery process or the Cybersecurity Authority.
+
+RIGHTS & WELLBEING NETWORK  |  Digital Rights & Support Blueprint
+Page 9
+11. Localised Referral Directory (Sample Seed Data —
+Ghana)
+The directory is a living, editable database (not hard-coded), so the exact contact details below are illustrative seed entries for the build
+team to verify and load at launch — always confirm current numbers directly with each organisation before go-live.
+Category
+Example bodies to onboard
+Human rights / civic space
+Commission on Human Rights & Administrative Justice (CHRAJ); Amnesty
+International Ghana; CDD-Ghana
+Mental health & suicide
+prevention
+Ghana Mental Health Authority; Mind Freedom Ghana; a licensed tele-counselling
+partner
+Gender-based violence
+Domestic Violence & Victim Support Unit (DOVVSU), Ghana Police Service; Ark
+Foundation Ghana; WiLDAF Ghana
+Digital rights & cyber safety
+Ghana Cybersecurity Authority incident-reporting channel; Media Foundation for
+West Africa (MFWA); Data Protection Commission
+Environmental / climate justice
+Environmental Protection Agency (EPA) Ghana; A Rocha Ghana; 350Africa
+Governance & civic
+participation
+National Commission for Civic Education (NCCE); Electoral Commission of Ghana
+Human rights defenders
+Front Line Defenders (international); Amnesty International's Urgent Action
+Network
+Men's peer support
+MenEngage Africa; a licensed counselling partner offering male-focused sessions
+International reference bodies
+UN Office of the High Commissioner for Human Rights (OHCHR); WHO; UNICEF;
+Amnesty International (global)
+Directory schema fields: organisation name, category tag(s), region/coverage area,
+phone/WhatsApp/email/website, operating hours, languages supported, last-verified date, and an internal "trust
+tier" (official government body / accredited NGO / community volunteer network).
+12. Privacy, Security & End-to-End Encryption
+
+Transport encryption: WhatsApp messages already travel over Meta's end-to-end encryption for
+user-to-business chat where supported; the website chat widget uses TLS 1.3 plus application-layer encryption
+of message payloads at rest.
+
+Data minimisation: collect only what is operationally necessary (message content, chosen topic, optional
+region); never require real names, national ID, or exact addresses.
+
+Anonymisation & retention limits: conversation logs are pseudonymised (hashed session IDs, not phone
+numbers) for analytics, with a short default retention period (e.g. 90 days) after which raw content is purged;
+only aggregated, de-identified statistics are kept long-term.
+
+Right to be forgotten: a user-triggered "delete my chat" command purges their thread immediately, in line with
+the Ghana Data Protection Act, 2012 (Act 843) and GDPR-equivalent principles for any EU-based users or
+funders.
+
+Access control: role-based access for moderators/case-workers, full audit logging of any human access to a
+conversation, and mandatory data-protection and safeguarding training for all staff/volunteers with access.
+
+Consent-gated identification: a user is only ever identified if they explicitly choose to be connected to a
+named case-worker for follow-up (e.g. legal aid); this is a distinct, clearly explained opt-in step, never a default.
+
+Independent security review: a penetration test and a data-protection impact assessment (DPIA) before
+public launch, given the sensitivity of the subject matter.
+
+RIGHTS & WELLBEING NETWORK  |  Digital Rights & Support Blueprint
+Page 10
+13. Brand & UI/UX Guidelines (Amnesty-Aligned)
+Amnesty International's global identity uses Amnesty Yellow as its primary colour — used sparingly, as an "alert"
+or call-to-action colour rather than a decorative fill — paired with black and white for contrast and legibility, plus a
+restrained grey for supporting graphics. This system should borrow that logic rather than the literal logo (the
+Amnesty candle mark itself is protected and should not be used unless in a formal, permitted partnership).
+Element
+Value
+Usage
+Amnesty Yellow
+#FFED00
+Primary accent — buttons, highlights, urgent notices. Use sparingly.
+Black
+#111111
+Primary text, headers, high-contrast backgrounds.
+White
+#FFFFFF
+Dominant background for readability and calm tone.
+Neutral grey
+#EDEDED /
+#555555
+Supporting UI chrome, secondary text, dividers.
+
+Plain, calm, accessible language (target reading level: lower-secondary school) in every UI string, in line with
+the tone described in Section 7.
+
+WCAG 2.2 AA colour-contrast and screen-reader support throughout the website and chat widget.
+
+A persistent, one-tap "Exit & clear history" control on every screen, and a visible "quick exit" button that instantly
+redirects to an innocuous page (useful for users in unsafe environments).
+
+Multilingual toggle (English, Twi, Ga, Ewe, Hausa at minimum) with content professionally translated, not
+machine-translated only, for legal/safety material.
+
+Mobile-first layout — most users will arrive via WhatsApp or a phone browser on modest data plans, so the
+website should be lightweight and fast on 3G.
+14. Data Model — Core Entities
+Entity
+Key fields
+Conversation
+session_id (hashed), channel, language, start_ts, end_ts, outcome_tag, risk_flag
+Message
+conversation_id, sender_type (user/bot/human), content, timestamp, redacted_pii_flag
+KnowledgeEntry
+topic_pillar, title, body, source_url, publisher, last_verified_date, review_status
+ReferralOrg
+name, category, region, contact_channels, hours, languages, trust_tier, last_verified_date
+URLCheckLog
+hashed_url, verdict, reputation_source, timestamp
+ModeratorAction
+conversation_id, moderator_id (internal), action_type, timestamp, notes
+
+RIGHTS & WELLBEING NETWORK  |  Digital Rights & Support Blueprint
+Page 11
+15. Build Roadmap
+Phase
+Deliverables
+Phase 0 — Foundation (4–6
+weeks)
+Finalise partner MOUs (Amnesty Ghana, CHRAJ, Mental Health Authority, etc.),
+assemble editorial/legal review team, set up cloud infrastructure, draft & legally
+review all knowledge-base content and the AI system prompt.
+Phase 1 — MVP (6–10 weeks)
+Website with static rights information for all 9 pillars; WhatsApp number live with
+rule-based menu + AI Q&A grounded in the initial knowledge base; manual
+human-handoff via a shared inbox; basic referral directory for Ghana.
+Phase 2 — Core platform
+(8–12 weeks)
+Full RAG pipeline with scheduled source ingestion; phishing/link-checker module;
+moderator dashboard with risk-triage queue; multilingual support; anonymised
+analytics dashboard.
+Phase 3 — Scale & harden
+(ongoing)
+Independent security audit & DPIA; SMS/USSD fallback for feature phones;
+regional expansion of the referral directory beyond Ghana; volunteer/partner
+case-worker network; periodic red-teaming of the AI's crisis-handling behaviour.
+16. Governance, Safeguarding & Partnerships
+
+An advisory board including a human-rights lawyer, a licensed mental-health professional, a child-safeguarding
+specialist and a digital-security expert reviews the knowledge base and AI behaviour quarterly.
+
+Formal partnership agreements (not just informational links) with at least the core referral bodies — CHRAJ,
+Ghana Mental Health Authority, DOVVSU — so escalations reach a real, accountable contact point.
+
+A published safeguarding policy covering how the system handles disclosures involving minors, which is treated
+with extra caution and, where legally required, mandatory reporting obligations are followed transparently.
+
+Transparent public reporting (annual, anonymised) on usage volume, top topics, and outcomes, mirroring the
+transparency Amnesty itself expects of institutions.
+
+RIGHTS & WELLBEING NETWORK  |  Digital Rights & Support Blueprint
+Page 12
+17. Risks & Mitigations
+Risk
+Mitigation
+AI gives incorrect legal/medical
+information
+Strict RAG-grounding to a lawyer/clinician-reviewed knowledge base; the AI is
+barred from freely generating uncited legal or medical claims.
+User in acute crisis is not
+handled fast enough
+Dedicated, low-latency safety-classifier that runs before the conversational model,
+with an immediate crisis-resource message + human alert.
+De-anonymisation risk via
+WhatsApp number
+Number encrypted at rest, no cross-linking to other identity systems, short
+retention window, no marketing/analytics use of the raw number.
+System used to spread the very
+misinformation it fights
+Allow-listed source registry, human editorial review gate before any new fact goes
+live, visible "last verified" dating.
+Government or third-party
+pressure to disclose user data
+Data minimisation reduces what exists to disclose; publish a clear
+transparency/data-request policy in advance, consistent with Amnesty's own
+advocacy for protecting sources and defenders.
+Over-reliance on the bot
+instead of real services
+Every answer is referral-first by design; the bot is positioned publicly as a bridge to
+help, not a substitute for professional or emergency services.
+
+RIGHTS & WELLBEING NETWORK  |  Digital Rights & Support Blueprint
+Page 13
+18. Brief for GitHub Copilot / Build Agent
+Paste the block below as the opening task description in your Copilot / coding-agent session to scaffold the
+repository in line with this blueprint.
+Build a monorepo for "Amani Line" — a rights & wellbeing support platform — with:
+1. /apps/web — Next.js + TypeScript + Tailwind website with pages for each of the 9 support pillars, an embedded
+chat widget component, and an accessible (WCAG 2.2 AA) design using colours #FFED00 (accent), #111111
+(text/dark), #FFFFFF (background), #EDEDED (secondary).
+2. /apps/whatsapp-gateway — Node.js (NestJS) service implementing a WhatsApp Cloud API webhook receiver
+and sender, forwarding normalised messages to the orchestrator over an internal message queue (Redis
+Streams).
+3. /apps/orchestrator — FastAPI (Python) service that: (a) runs an incoming message through a safety-triage
+classifier, (b) if urgent, immediately returns a crisis-resource template and pushes a moderator alert; (c) if routine,
+performs RAG retrieval against a pgvector-backed knowledge base and a PostGIS-backed referral directory, then
+calls the LLM with a versioned system prompt to produce a grounded, referral-first response.
+4. /apps/moderator-dashboard — React admin app for human moderators/partner-org staff: risk-triage queue,
+conversation handoff view (with consent-gated identity reveal), and CMS screens for editing KnowledgeEntry and
+ReferralOrg records.
+5. /services/url-safety — a small microservice wrapping Google Safe Browsing + VirusTotal lookups behind one
+internal endpoint, used by the orchestrator and exposed as a "check this link" bot command.
+6. /packages/shared — shared TypeScript/Python types for Conversation, Message, KnowledgeEntry,
+ReferralOrg, URLCheckLog and ModeratorAction, matching the data model in Section 14 of the attached
+blueprint.
+Non-negotiable behaviour constraints for the orchestrator's LLM calls (encode directly in the system prompt):
+identify as an AI; answer only from retrieved, cited knowledge-base content; always include at least one concrete
+referral; never produce operational instructions for risky personal action; apply WHO safe-messaging rules to any
+suicide/self-harm-adjacent content and always pair it with a live crisis line; remain neutral on partisan political
+questions; flag imminent-risk conversations for human review automatically.
+Use environment-based config for API keys (LLM provider, WhatsApp Cloud API, Safe Browsing, VirusTotal); do
+not commit secrets. Include Docker Compose for local development and a basic CI pipeline (lint, type-check, test)
+for each app.
+
+RIGHTS & WELLBEING NETWORK  |  Digital Rights & Support Blueprint
+Page 14
+19. Reference Standards & Sources
+
+Amnesty International — global thematic priorities (protest & civic space, digital rights, gender justice, human
+rights defenders, climate justice) and Amnesty Global Identity/Brand Toolkit (colour system).
+
+United Nations Office of the High Commissioner for Human Rights (OHCHR) — International Covenant on Civil
+and Political Rights (ICCPR); Human Rights Council resolutions on digital rights and the right to peaceful
+assembly.
+
+World Health Organization (WHO) & International Association for Suicide Prevention (IASP) — safe-messaging
+guidelines for suicide-and-self-harm-related content.
+
+UN Convention on the Rights of the Child (UNCRC) and CEDAW / Maputo Protocol — for child-safeguarding
+and gender-rights content standards.
+
+Ghana Data Protection Act, 2012 (Act 843), and the EU General Data Protection Regulation (GDPR) as a
+comparative privacy-by-design benchmark.
+
+Meta WhatsApp Business Platform (Cloud API) documentation — current architecture and
+per-message/category pricing model.
+
+Google Safe Browsing API, VirusTotal API and PhishTank — for the link/phishing safety module.
+
+Front Line Defenders and Access Now — models for human-rights-defender emergency referral and a
+digital-security helpline.
+This document is a planning and engineering blueprint. It is not a substitute for legal, medical or mental-health advice. If you or
+someone you know is in immediate danger or experiencing a mental-health crisis, contact local emergency services or a crisis line
+directly before relying on any system built from this document.

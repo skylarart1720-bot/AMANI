@@ -1,0 +1,261 @@
+import { Children, cloneElement, isValidElement, ReactNode } from "react";
+
+export type Language = "en" | "fr";
+const french: Record<string, string> = {
+  'AI configured | consent required': 'IA configurée | consentement requis',
+  'Message sent to human support.': 'Message transmis au soutien humain.',
+  'Some things are better talked through.': 'Certaines choses se vivent mieux quand on en parle.',
+  'queued': 'en attente',
+  'in progress': 'en cours',
+  'resolved': 'traitée',
+  '. Response time is not guaranteed.': ". Le délai de réponse n'est pas garanti.",
+  'Checked': 'Vérifié le',
+  'This is not an emergency service. In Ghana, call 112 for immediate danger. Human response times are not guaranteed. The interface is available in English and French. Reviewed source documents retain their original language.': "Ceci n'est pas un service d'urgence. Au Ghana, appelez le 112 en cas de danger immédiat. Le délai de réponse humaine n'est pas garanti. L'interface est disponible en anglais et en français. Les documents sources conservent leur langue d'origine.",
+  "Skip to content": "Aller au contenu",
+  "AMANI home": "Accueil d'AMANI",
+  "RIGHTS & WELLBEING": "DROITS ET BIEN-ÊTRE",
+  "Quick exit": "Sortie rapide",
+  "Toggle navigation": "Afficher le menu",
+  "Main navigation": "Navigation principale",
+  "YOUR SUPPORT SPACE": "VOTRE ESPACE DE SOUTIEN",
+  "Get support": "Obtenir du soutien",
+  "Support topics": "Thèmes de soutien",
+  "Find help": "Trouver de l'aide",
+  "Check a link": "Vérifier un lien",
+  "No name needed.": "Aucun nom requis.",
+  "You decide what to share.": "Vous choisissez quoi partager.",
+  "Privacy & your data": "Confidentialité et données",
+  "Delete conversation": "Supprimer la conversation",
+  "Independent support information.": "Informations indépendantes.",
+  "Not an emergency service.": "Ceci n'est pas un service d'urgence.",
+  "In immediate danger in Ghana?": "Danger immédiat au Ghana ? ",
+  "Call 112": "Appeler le 112",
+  "A LITTLE SUPPORT. A WAY FORWARD.": "DU SOUTIEN POUR AVANCER.",
+  "You can start here.": "Vous pouvez commencer ici.",
+  "Support for what matters.": "Du soutien pour ce qui compte.",
+  "Find your next point of support.": "Trouvez un point de soutien.",
+  "Pause. Check the link.": "Un instant. Vérifiez le lien.",
+  "A space to talk about your rights, safety and wellbeing.":
+    "Un espace pour parler de vos droits, de votre sécurité et de votre bien-être.",
+  "Nine pathways. Your questions are welcome in all of them.":
+    "Neuf thèmes de soutien. Toutes vos questions sont les bienvenues.",
+  "Connect with organisations in Ghana and beyond.":
+    "Contactez des organismes au Ghana et ailleurs.",
+  "Look up a suspicious URL without opening it.":
+    "Vérifiez une adresse suspecte sans l'ouvrir.",
+  "Support service connected": "Service de soutien connecté",
+  "Connecting to support": "Connexion au service",
+  "Dismiss error": "Fermer le message d'erreur",
+  "Support conversation": "Conversation de soutien",
+  "Amani support": "Soutien Amani",
+  "AI available with your consent": "IA disponible avec votre consentement",
+  "Directory support | AI unavailable": "Annuaire de soutien | IA indisponible",
+  "Whatever brings you here,": "Quelle que soit votre situation,",
+  "you deserve to be heard.": "vous méritez d'être écouté.",
+  "I am Amani, an AI-enabled information assistant. I can help you find support, but I am not a lawyer, doctor or counsellor.":
+    "Je suis Amani, un assistant d'information doté d'une IA. Je peux vous aider à trouver du soutien, mais je ne suis ni avocat, ni médecin, ni conseiller.",
+  "You do not need to share your name, phone number or address.":
+    "Vous n'avez pas besoin de donner votre nom, votre numéro de téléphone ou votre adresse.",
+  "I need wellbeing support": "J'ai besoin de soutien pour mon bien-être",
+  "I have an online safety concern": "J'ai un problème de sécurité en ligne",
+  "I want to understand my rights": "Je veux comprendre mes droits",
+  You: "Vous",
+  "Human moderator": "Modérateur humain",
+  "Working on your request...": "Traitement de votre demande…",
+  Topic: "Thème",
+  "Conversation topic": "Thème de la conversation",
+  "Let Amani help me find it": "Laisser Amani identifier le thème",
+  "Use AI replies. My recent messages will be sent to the AI provider.":
+    "Activer les réponses de l'IA. Mes messages récents seront transmis au fournisseur d'IA.",
+  "Your message": "Votre message",
+  "What's on your mind?": "De quoi souhaitez-vous parler ?",
+  "Send message": "Envoyer le message",
+  "Encrypted storage. Deleted after 7 days or when you delete your chat.":
+    "Stockage chiffré. Suppression après 7 jours ou à votre demande.",
+  "A HUMAN CONNECTION": "UN CONTACT HUMAIN",
+  "Some things are better": "Certaines choses se vivent mieux",
+  "talked through.": "quand on en parle.",
+  "You can request a moderator. Messages stay in this conversation; you do not need to provide contact details.":
+    "Vous pouvez demander un modérateur. Les messages restent dans cette conversation ; aucune coordonnée personnelle ne vous est demandée.",
+  "Request human support": "Demander un soutien humain",
+  "Requests are queued. Availability is not guaranteed.":
+    "Les demandes sont mises en attente. La disponibilité n'est pas garantie.",
+  "DIRECT SUPPORT": "SOUTIEN DIRECT",
+  "Find the right organisation.": "Trouvez le bon organisme.",
+  "Explore official contact channels for rights, wellbeing and safety support.":
+    "Consultez les contacts officiels pour vos droits, votre bien-être et votre sécurité.",
+  "Open support directory": "Ouvrir l'annuaire",
+  "Not sure about a link?": "Un doute sur un lien ?",
+  "Check its reputation before sharing information.":
+    "Vérifiez sa réputation avant de partager des informations.",
+  "Talk about this": "Parler de ce sujet",
+  "Official website": "Site officiel",
+  "Contact details need confirmation with the organisation":
+    "Coordonnées à confirmer auprès de l'organisme",
+  "Confirm with organisation": "À confirmer auprès de l'organisme",
+  "24 hours": "24 h/24",
+  International: "International",
+  "Search organisations": "Rechercher un organisme",
+  "Search by topic or organisation": "Rechercher par thème ou organisme",
+  "Coverage area": "Zone de couverture",
+  "All coverage areas": "Toutes les zones",
+  "No organisations match this search. Try a broader term.":
+    "Aucun organisme ne correspond. Essayez un terme plus général.",
+  "Check a suspicious link": "Vérifier un lien suspect",
+  "Reputation checks can identify known threats. A result with no detections is never a guarantee of safety.":
+    "La vérification peut identifier des menaces connues. L'absence de détection ne garantit jamais la sécurité.",
+  "Website URL": "Adresse du site",
+  "I agree to share this URL with the configured reputation providers. I have removed private tokens and personal information.":
+    "J'accepte de transmettre cette adresse aux services de réputation configurés. J'ai retiré les jetons privés et les informations personnelles.",
+  "Checking reputation...": "Vérification en cours…",
+  "Check link": "Vérifier le lien",
+  "Live reputation providers are not configured. Checks will return an unknown result.":
+    "Les services de réputation ne sont pas configurés. Le résultat sera « inconnu ».",
+  "Threat reported": "Menace signalée",
+  "No known threats reported": "Aucune menace connue signalée",
+  "Unable to verify this link": "Impossible de vérifier ce lien",
+  "Fresh analysis in progress": "Nouvelle analyse en cours",
+  "A fresh analysis is in progress. This link has not been verified yet.": "Une nouvelle analyse est en cours. Ce lien n'a pas encore été vérifié.",
+  "The provider request limit was reached. Please try again later; this link has not been verified.": "La limite de requêtes du fournisseur est atteinte. Réessayez plus tard ; ce lien n'a pas été vérifié.",
+  "I agree to share this URL with the configured reputation providers for lookup and fresh scanning. Reports may be public. I have removed private tokens and personal information.": "J'accepte de partager cette URL avec les fournisseurs configurés pour consultation et nouvelle analyse. Les rapports peuvent être publics. J'ai retiré les jetons privés et les informations personnelles.",
+  "SOMETHING FEELS WRONG?": "QUELQUE CHOSE VOUS INQUIÈTE ?",
+  "Report a cyber incident.": "Signalez un incident informatique.",
+  "Ghana's Cyber Security Authority provides an official incident reporting channel.":
+    "La Cyber Security Authority du Ghana propose un canal officiel de signalement.",
+  "Call 292": "Appeler le 292",
+  "Official reporting page": "Page officielle de signalement",
+  "Rights. Safety. Wellbeing.": "Droits. Sécurité. Bien-être.",
+  "Privacy & safeguarding": "Confidentialité et protection",
+  "Privacy and safeguarding": "Confidentialité et protection",
+  "Close dialog": "Fermer la fenêtre",
+  "Your privacy matters.": "Votre confidentialité compte.",
+  "No account or identity is required. Conversations are encrypted in storage and retained for up to 7 days. Your browser tab stores a random access token.":
+    "Aucun compte ni identité n'est requis. Les conversations sont chiffrées et conservées pendant 7 jours au maximum. Votre onglet conserve un jeton d'accès aléatoire.",
+  "AI replies require consent to send recent conversation text to the configured AI provider. Provider retention policies may apply. Moderators can read conversations referred to the queue.":
+    "Les réponses de l'IA nécessitent votre accord pour transmettre les messages récents au fournisseur d'IA. Sa politique de conservation peut s'appliquer. Les modérateurs peuvent consulter les conversations mises en attente.",
+  "Delete conversation removes messages and linked cases from this service. Quick exit attempts deletion and leaves immediately; network failure can prevent deletion. Neither control erases browser or network history, backups, or provider records.":
+    "La suppression retire vos messages et demandes de ce service. La sortie rapide tente la suppression puis quitte immédiatement ; une panne réseau peut empêcher la suppression. Ces commandes n'effacent ni l'historique du navigateur ou du réseau, ni les sauvegardes, ni les données des fournisseurs.",
+  "This is not an emergency service. In Ghana, call 112 for immediate danger. Human response times are not guaranteed. English support is available; reviewed local-language content is not yet available.":
+    "Ceci n'est pas un service d'urgence. Au Ghana, appelez le 112 en cas de danger immédiat. Le délai de réponse humaine n'est pas garanti. L'interface est disponible en anglais et en français ; les documents sources conservent leur langue d'origine.",
+  "Delete this conversation?": "Supprimer cette conversation ?",
+  "This deletes your messages and linked support requests from this service. It cannot be undone.":
+    "Vos messages et demandes de soutien seront supprimés de ce service. Cette action est irréversible.",
+  "Keep conversation": "Conserver la conversation",
+  "Your conversation has been deleted from this service.":
+    "Votre conversation a été supprimée de ce service.",
+  "Directory response": "Réponse de l'annuaire",
+  "AI response with directory references": "Réponse de l'IA avec références",
+  "Priority support resources": "Ressources de soutien prioritaires",
+  "Your request is queued. A response is not guaranteed. For immediate danger in Ghana call 112.":
+    "Votre demande est en attente. Une réponse n'est pas garantie. En cas de danger immédiat au Ghana, appelez le 112.",
+  "The directory could not be loaded. Please refresh to retry.":
+    "L'annuaire n'a pas pu être chargé. Actualisez la page pour réessayer.",
+  "The support service is unavailable. Please try again shortly.":
+    "Le service de soutien est indisponible. Veuillez réessayer dans un instant.",
+  "The request could not be completed.": "La demande n'a pas pu aboutir.",
+  "This session has expired. Start a new conversation.":
+    "Cette session a expiré. Démarrez une nouvelle conversation.",
+  "Too many requests. Please wait a minute.":
+    "Trop de demandes. Veuillez patienter une minute.",
+  "Enter a public HTTP or HTTPS URL without credentials or a custom port.":
+    "Saisissez une adresse publique HTTP ou HTTPS, sans identifiants ni port personnalisé.",
+  "Consent is required to share this URL with reputation providers.":
+    "Votre consentement est requis pour transmettre cette adresse aux services de réputation.",
+  "Link checking is unavailable. No safety verdict was produced.":
+    "La vérification est indisponible. Aucun résultat de sécurité n'a été établi.",
+  "A current reputation result is unavailable. This link has not been verified.":
+    "Aucun résultat récent n'est disponible. Ce lien n'a pas été vérifié.",
+  "Reputation providers reported a threat. Do not enter personal details.":
+    "Les services de réputation ont signalé une menace. Ne saisissez pas de données personnelles.",
+  "No known threats were reported by the responding providers. This does not guarantee safety.":
+    "Les services ayant répondu n'ont signalé aucune menace connue. Cela ne garantit pas la sécurité.",
+  "This URL uses HTTP, which does not encrypt the connection.":
+    "Cette adresse utilise HTTP, qui ne chiffre pas la connexion.",
+  "The domain uses international characters. Check the spelling against the organisation's official address.":
+    "Le domaine utilise des caractères internationaux. Comparez son orthographe avec l'adresse officielle de l'organisme.",
+  "Protest rights & civic freedom": "Droit de manifester et libertés civiques",
+  "Activism & youth movements": "Engagement et mouvements de jeunesse",
+  "Mental health & wellbeing": "Santé mentale et bien-être",
+  "Climate & environmental justice": "Climat et justice environnementale",
+  "Digital rights & online safety": "Droits numériques et sécurité en ligne",
+  "Youth participation & governance": "Participation des jeunes et gouvernance",
+  "Human rights defenders": "Défenseurs des droits humains",
+  "Gender & intersectional justice": "Genre et justice intersectionnelle",
+  "Men's Circle": "Cercle des hommes",
+  "Rights information and independent legal support.":
+    "Informations sur les droits et soutien juridique indépendant.",
+  "Civil-society networks and support for community organising.":
+    "Réseaux de la société civile et soutien aux initiatives collectives.",
+  "Support pathways for distress, anxiety and mental health concerns.":
+    "Soutien face à la détresse, à l'anxiété et aux difficultés de santé mentale.",
+  "Environmental rights and community advocacy resources.":
+    "Ressources pour les droits environnementaux et la défense des communautés.",
+  "Cyber incident reporting and digital security support.":
+    "Signalement des incidents informatiques et soutien en sécurité numérique.",
+  "Civic education and public participation resources.":
+    "Ressources d'éducation civique et de participation citoyenne.",
+  "Protection resources for people defending human rights.":
+    "Ressources de protection pour les défenseurs des droits humains.",
+  "Support for violence, discrimination and witchcraft accusations.":
+    "Soutien face aux violences, aux discriminations et aux accusations de sorcellerie.",
+  "Non-judgemental resources for men, boys and positive masculinity.":
+    "Ressources sans jugement pour les hommes, les garçons et une masculinité positive.",
+  "Emergency medical help": "Aide médicale urgente",
+  "Emergency medical response in Ghana. Outside Ghana, use your local emergency number.":
+    "Secours médicaux au Ghana. Ailleurs, appelez le numéro d'urgence local.",
+};
+
+export function translate(value: string, language: Language): string {
+  if (language === "en") return value;
+  const text = value.trim();
+  if (french[text]) return value.replace(text, french[text]);
+  if (text.startsWith("Contact checked "))
+    return value.replace("Contact checked ", "Coordonnées vérifiées le ");
+  if (text.startsWith("Checked "))
+    return value.replace("Checked ", "Vérifié le ");
+  if (text.startsWith("Visit ")) return value.replace("Visit ", "Consulter ");
+  if (
+    text.includes(
+      "organisations | Confirm availability directly. Listings do not imply a partnership.",
+    )
+  )
+    return value.replace(
+      "organisations | Confirm availability directly. Listings do not imply a partnership.",
+      "organismes | Confirmez la disponibilité directement. Les fiches n'impliquent pas de partenariat.",
+    );
+  if (text.startsWith("Human support request"))
+    return value
+      .replace("Human support request", "Demande de soutien humain")
+      .replace("queued", "en attente")
+      .replace("in progress", "en cours")
+      .replace("resolved", "traitée")
+      .replace(
+        "Response time is not guaranteed.",
+        "Le délai de réponse n'est pas garanti.",
+      );
+  return value;
+}
+
+// Translate React text nodes before rendering, preserving handlers, refs and form values.
+// User messages and human replies remain exactly as written.
+export function localize(tree: ReactNode, language: Language): ReactNode {
+  if (language === "en") return tree;
+  const walk = (node: ReactNode): ReactNode => {
+    if (typeof node === "string") return translate(node, language);
+    if (!isValidElement<Record<string, unknown>>(node)) return node;
+    const props: Record<string, unknown> = {};
+    for (const key of ["title", "aria-label", "placeholder"]) {
+      if (typeof node.props[key] === "string")
+        props[key] = translate(node.props[key] as string, language);
+    }
+    const skip = node.props["data-original-text"];
+    return cloneElement(
+      node,
+      props,
+      skip
+        ? (node.props.children as ReactNode)
+        : Children.map(node.props.children as ReactNode, walk),
+    );
+  };
+  return Children.map(tree, walk);
+}

@@ -1,0 +1,14 @@
+{
+  "name": "amani-line",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "docker compose up --build",
+    "build:web": "npm --prefix apps/web run build",
+    "build:dashboard": "npm --prefix apps/moderator-dashboard run build",
+    "build": "npm run build:web && npm run build:dashboard",
+    "lint:web": "npm --prefix apps/web run lint",
+    "lint:dashboard": "npm --prefix apps/moderator-dashboard run lint",
+    "lint": "npm run lint:web && npm run lint:dashboard"
+  }
+}
