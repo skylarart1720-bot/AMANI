@@ -13,13 +13,16 @@ import unicodedata
 from collections import defaultdict, deque
 from contextlib import contextmanager, suppress
 from pathlib import Path
+from typing import Annotated
 
 import httpx
 from cryptography.fernet import Fernet
 from dotenv import dotenv_values
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
+
+Label = Annotated[str, StringConstraints(max_length=60, strip_whitespace=True)]
 
 ROOT = Path(os.getenv("PROJECT_ROOT", str(Path(__file__).resolve().parents[3]) if len(Path(__file__).resolve().parents) > 3 else "/app"))
 DATA = Path(os.getenv("AMANI_DATA_DIR", str(ROOT / "data")))
@@ -39,7 +42,45 @@ def local_secret(name, filename, factory):
 
 CIPHER = Fernet(local_secret("CHAT_ENCRYPTION_KEY", ".chat-key", lambda: Fernet.generate_key().decode()).encode())
 ADMIN_TOKEN = local_secret("ADMIN_API_TOKEN", ".admin-token", lambda: secrets.token_urlsafe(32))
+SHARED_ACTOR = "shared-token"
 _configuration_mtime = None
+
+def staff_accounts():
+    """Named staff tokens, so a moderator action can be attributed to one person.
+
+    STAFF_ACCOUNT_TOKENS is a JSON object of staff id to bearer token. When it is
+    unset the service keeps the single shared ADMIN_API_TOKEN and every action is
+    recorded as SHARED_ACTOR, which is honest but not per-person attributable.
+    """
+    raw = os.getenv("STAFF_ACCOUNT_TOKENS", "").strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except ValueError as error:
+        raise RuntimeError("STAFF_ACCOUNT_TOKENS must be a JSON object of staff id to token") from error
+    if not isinstance(parsed, dict) or not parsed:
+        raise RuntimeError("STAFF_ACCOUNT_TOKENS must be a non-empty JSON object")
+    accounts = {}
+    for actor, token in parsed.items():
+        if not re.fullmatch(r"[a-z0-9._@-]{2,60}", str(actor)) or not isinstance(token, str) or len(token) < 20:
+            raise RuntimeError("Each STAFF_ACCOUNT_TOKENS entry needs a staff id and a token of at least 20 characters")
+        accounts[str(actor)] = token
+    return accounts
+
+STAFF_ACCOUNTS = staff_accounts()
+
+def resolve_staff(token):
+    """Return the staff identity behind a bearer token, or None. Never echoes the token."""
+    if not token:
+        return None
+    if STAFF_ACCOUNTS:
+        matched = None
+        for actor, candidate in STAFF_ACCOUNTS.items():
+            if hmac.compare_digest(token, candidate):
+                matched = actor
+        return matched
+    return SHARED_ACTOR if hmac.compare_digest(token, ADMIN_TOKEN) else None
 
 def refresh_integrations():
     global _configuration_mtime
@@ -76,6 +117,41 @@ with connect() as conn:
     CREATE TABLE IF NOT EXISTS knowledge (id TEXT PRIMARY KEY, payload TEXT NOT NULL, status TEXT NOT NULL);
     """)
 
+def migrate_audit(conn):
+    """Add the attribution columns that older support.db files predate."""
+    present = {row["name"] for row in conn.execute("PRAGMA table_info(audit)")}
+    for column in ("actor", "resource", "outcome", "detail"):
+        if column not in present:
+            conn.execute(f"ALTER TABLE audit ADD COLUMN {column} TEXT")
+
+with connect() as conn:
+    migrate_audit(conn)
+
+AUDIT_RETENTION = 86400 * 90
+SESSION_RETENTION = 86400 * 7
+
+def purge_expired_once():
+    """Drop expired visitor sessions and audit rows past their retention window."""
+    with connect() as conn:
+        conn.execute("DELETE FROM sessions WHERE created < ?", (time.time() - SESSION_RETENTION,))
+        conn.execute("DELETE FROM audit WHERE created < ?", (time.time() - AUDIT_RETENTION,))
+
+def audit_detail(value):
+    """Audit details carry identifiers and short status words, never message text."""
+    if value is None:
+        return None
+    return str(value)[:120] or None
+
+def record_audit(action, actor, resource=None, outcome="success", detail=None, conn=None):
+    """Append an attributable audit row. Pass conn to keep it in the caller's transaction."""
+    row = (action, actor, audit_detail(resource), outcome, audit_detail(detail), time.time())
+    statement = "INSERT INTO audit(action,actor,resource,outcome,detail,created) VALUES(?,?,?,?,?,?)"
+    if conn is not None:
+        conn.execute(statement, row)
+        return
+    with connect() as own:
+        own.execute(statement, row)
+
 TOPICS = [
     {"id": "protest-rights", "title": "Protest rights & civic freedom", "description": "Rights information and independent legal support.", "source": "CHRAJ", "url": "https://chraj.gov.gh/", "keywords": "protest arrest detained police lawyer legal rights"},
     {"id": "activism", "title": "Activism & youth movements", "description": "Civil-society networks and support for community organising.", "source": "WACSI", "url": "https://wacsi.org/", "keywords": "activism activist organising movement youth network"},
@@ -87,22 +163,62 @@ TOPICS = [
     {"id": "gender-rights", "title": "Gender & intersectional justice", "description": "Support for violence, discrimination and witchcraft accusations.", "source": "Ghana Police DOVVSU", "url": "https://police.gov.gh/en/index.php/domestic-violence-victims-support-unit-dovvsu/", "keywords": "gender gbv domestic violence abuse witchcraft discrimination feminist"},
     {"id": "mens-circle", "title": "Men's Circle", "description": "Non-judgemental resources for men, boys and positive masculinity.", "source": "MenEngage Africa", "url": "https://menengageafrica.org/", "keywords": "men masculinity father fatherhood boys addiction lonely"},
 ]
+REFERRAL_TRUST = ("official", "community", "unverified")
+REFERRAL_CHANNELS = ("phone", "website", "email", "in-person", "sms")
 REFERRALS = [{"id": t["id"], "title": t["title"], "organisation": t["source"], "website": t["url"],
               "category": t["id"], "region": "Ghana" if t["id"] in ("protest-rights", "mental-health", "digital-rights", "governance", "gender-rights") else "International",
+              "regions": ["Ghana"] if t["id"] in ("protest-rights", "mental-health", "digital-rights", "governance", "gender-rights") else ["International"],
               "phone": "292" if t["id"] == "digital-rights" else None, "notes": t["description"],
               "verified_at": "2026-09-26" if t["id"] == "digital-rights" else None,
+              "channels": ["phone", "website"] if t["id"] == "digital-rights" else ["website"],
+              "trust": "official", "evidence": "https://csa.gov.gh/report" if t["id"] == "digital-rights" else None,
+              "review_due": "2027-03-26" if t["id"] == "digital-rights" else None,
               "hours": "Confirm with organisation", "languages": ["English"]} for t in TOPICS]
 REFERRALS.insert(0, {"id": "emergency", "title": "Emergency medical help", "organisation": "Ghana National Ambulance Service",
-    "website": "https://www.nas.gov.gh/", "category": "emergency", "region": "Ghana", "phone": "112",
+    "website": "https://www.nas.gov.gh/", "category": "emergency", "region": "Ghana", "regions": ["Ghana"], "phone": "112",
     "notes": "Emergency medical response in Ghana. Outside Ghana, use your local emergency number.",
-    "verified_at": "2026-09-26", "hours": "24 hours", "languages": ["Confirm with service"]})
+    "verified_at": "2026-09-26", "review_due": "2027-03-26", "channels": ["phone", "website"],
+    "trust": "official", "evidence": "https://www.nas.gov.gh/",
+    "hours": "24 hours", "languages": ["Confirm with service"]})
 
 with connect() as conn:
     conn.executemany("INSERT OR IGNORE INTO directory VALUES(?,?)", [(r["id"], json.dumps(r)) for r in REFERRALS])
 
-def get_directory():
+def verification_state(record, today=None):
+    """Honest contact status. A listed contact is never described as confirmed without a check date."""
+    checked, due = record.get("verified_at"), record.get("review_due")
+    if not checked:
+        return "unverified"
+    if due and due < (today or time.strftime("%Y-%m-%d")):
+        return "stale"
+    return "verified"
+
+def referral_view(record):
+    """Fill defaults for records saved before these fields existed, then derive the contact status."""
+    phone = record.get("phone")
+    view = {"id": record.get("id", ""), "title": record.get("title", ""), "organisation": record.get("organisation", ""),
+            "category": record.get("category", ""), "region": record.get("region") or "Ghana",
+            "phone": phone, "website": record.get("website", ""), "notes": record.get("notes", ""),
+            "hours": record.get("hours") or "Confirm with organisation",
+            "languages": [l for l in (record.get("languages") or []) if l] or ["Confirm with organisation"],
+            "regions": [r for r in (record.get("regions") or []) if r] or [record.get("region") or "Ghana"],
+            "channels": [c for c in (record.get("channels") or []) if c] or (["phone", "website"] if phone else ["website"]),
+            "trust": record.get("trust") if record.get("trust") in REFERRAL_TRUST else "unverified",
+            "verified_at": record.get("verified_at"), "review_due": record.get("review_due"), "evidence": record.get("evidence")}
+    view["verification"] = verification_state(view)
+    return view
+
+def get_directory(region=None, category=None):
+    """Coarse coverage filters only. AMANI never asks for or stores a precise location."""
     with connect() as conn:
-        return [json.loads(row["payload"]) for row in conn.execute("SELECT payload FROM directory ORDER BY id")]
+        records = [json.loads(row["payload"]) for row in conn.execute("SELECT payload FROM directory ORDER BY id")]
+    views = [referral_view(record) for record in records]
+    if category:
+        views = [r for r in views if r["category"] == category]
+    if region:
+        wanted = region.strip().lower()
+        views = [r for r in views if wanted in {value.lower() for value in r["regions"]}]
+    return views
 
 class DirectoryInput(BaseModel):
     id: str = Field(pattern="^[a-z0-9-]{1,60}$")
@@ -115,7 +231,16 @@ class DirectoryInput(BaseModel):
     notes: str = Field(max_length=1500)
     verified_at: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     hours: str = Field(max_length=150)
-    languages: list[str] = Field(default_factory=lambda: ["English"], max_length=10)
+    languages: list[Label] = Field(default_factory=lambda: ["English"], max_length=10)
+    regions: list[Label] = Field(default_factory=list, max_length=10)
+    channels: list[Label] = Field(default_factory=lambda: ["website"], max_length=5)
+    trust: str = Field(default="unverified", pattern="^(official|community|unverified)$")
+    evidence: str | None = Field(default=None, max_length=1000)
+    review_due: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+class LinkCheckInput(BaseModel):
+    url: str = Field(min_length=1, max_length=4096)
+    consent: bool = False
 
 class KnowledgeInput(BaseModel):
     title: str = Field(min_length=3, max_length=150)
@@ -136,6 +261,7 @@ def reviewed_knowledge(category):
 class MessageInput(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     topic: str | None = None
+    region: str | None = Field(default=None, max_length=60)
     ai_consent: bool = False
     language: str = Field(default="en", pattern="^(en|fr)$")
 
@@ -149,7 +275,7 @@ def session_id(request):
     token = request.headers.get("authorization", "").removeprefix("Bearer ")
     digest = hashlib.sha256(token.encode()).hexdigest()
     with connect() as conn:
-        conn.execute("DELETE FROM sessions WHERE created < ?", (time.time() - 86400 * 7,))
+        conn.execute("DELETE FROM sessions WHERE created < ?", (time.time() - SESSION_RETENTION,))
         if len(token) < 32 or not conn.execute("SELECT 1 FROM sessions WHERE id=?", (digest,)).fetchone():
             raise HTTPException(401, "This session has expired. Start a new conversation.")
     return digest
@@ -222,15 +348,40 @@ async def ai_reply(message, context, previous, language="en"):
     except (httpx.HTTPError, KeyError, ValueError, TypeError):
         return None
 
+BODY_LIMIT = 20000
+
+async def bounded_body(request, limit=BODY_LIMIT):
+    """Reject an oversized body from its declared length, then cap the receive itself.
+
+    The declared check runs first so an honest client never has its body buffered at
+    all, and the streaming cap covers clients that omit or understate Content-Length.
+    Starlette replays Request._body to downstream handlers, so caching it here keeps
+    FastAPI's own body parsing working while still bounding what we hold in memory.
+    """
+    declared = request.headers.get("content-length")
+    if declared is not None:
+        try:
+            if int(declared) > limit:
+                return JSONResponse({"detail": "Request is too large."}, status_code=413)
+        except ValueError:
+            return JSONResponse({"detail": "Invalid request."}, status_code=400)
+    chunks, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > limit:
+            return JSONResponse({"detail": "Request is too large."}, status_code=413)
+        chunks.append(chunk)
+    request._body = b"".join(chunks)
+    return None
+
 def install(app):
     buckets = defaultdict(deque)
     lock = threading.Lock()
+    app.state.rate_buckets = buckets
 
     async def purge_expired():
         while True:
-            with connect() as conn:
-                conn.execute("DELETE FROM sessions WHERE created < ?", (time.time() - 86400 * 7,))
-                conn.execute("DELETE FROM audit WHERE created < ?", (time.time() - 86400 * 90,))
+            purge_expired_once()
             await asyncio.sleep(3600)
 
     @app.on_event("startup")
@@ -246,22 +397,6 @@ def install(app):
     @app.middleware("http")
     async def guard(request, call_next):
         path = request.url.path
-        public = (request.method == "GET" and path in ("/health", "/referrals", "/knowledge", "/knowledge-sources")) or path.startswith("/support/")
-        if not public:
-            token = request.headers.get("authorization", "").removeprefix("Bearer ")
-            if not hmac.compare_digest(token, ADMIN_TOKEN):
-                return JSONResponse({"detail": "Moderator authentication required."}, status_code=401)
-        # Read a bounded body even when a client omits Content-Length.
-        if request.method in ("POST", "PATCH", "PUT"):
-            body = await request.body()
-            if len(body) > 20000:
-                return JSONResponse({"detail": "Request is too large."}, status_code=413)
-        if request.method in ("POST", "PATCH", "PUT"):
-            try:
-                if int(request.headers.get("content-length", "0")) > 20000:
-                    return JSONResponse({"detail": "Request is too large."}, status_code=413)
-            except ValueError:
-                return JSONResponse({"detail": "Invalid request."}, status_code=400)
         now = time.monotonic()
         client = request.client.host if request.client else "unknown"
         with lock:
@@ -275,6 +410,18 @@ def install(app):
             if len(bucket) >= 120:
                 return JSONResponse({"detail": "Too many requests. Please wait a minute."}, status_code=429, headers={"Retry-After": "60"})
             bucket.append(now)
+        public = (request.method == "GET" and path in ("/health", "/referrals", "/knowledge", "/knowledge-sources")) or path.startswith("/support/")
+        actor = None
+        if not public:
+            token = request.headers.get("authorization", "").removeprefix("Bearer ")
+            actor = resolve_staff(token)
+            if not actor:
+                record_audit("auth.denied", "anonymous", path, "denied")
+                return JSONResponse({"detail": "Moderator authentication required."}, status_code=401)
+        request.state.actor = actor or "anonymous"
+        too_large = await bounded_body(request)
+        if too_large is not None:
+            return too_large
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -294,14 +441,14 @@ def install(app):
                 "human_support": "Requests are queued; response times and staffing are not guaranteed.", "retention_days": 7}
 
     @app.get("/support/directory")
-    def directory():
-        return {"topics": TOPICS, "referrals": get_directory()}
+    def directory(region: str | None = Query(default=None, max_length=60), category: str | None = Query(default=None, max_length=60)):
+        return {"topics": TOPICS, "referrals": get_directory(region, category)}
 
     @app.post("/support/sessions")
     def create_session():
         token = secrets.token_urlsafe(32)
         with connect() as conn:
-            conn.execute("DELETE FROM sessions WHERE created < ?", (time.time() - 86400 * 7,))
+            conn.execute("DELETE FROM sessions WHERE created < ?", (time.time() - SESSION_RETENTION,))
             conn.execute("INSERT INTO sessions VALUES(?,?)", (hashlib.sha256(token.encode()).hexdigest(), time.time()))
         return {"token": token}
 
@@ -319,7 +466,7 @@ def install(app):
             last = None
             while not await request.is_disconnected():
                 with connect() as conn:
-                    exists = conn.execute("SELECT 1 FROM sessions WHERE id=? AND created>?", (sid, time.time() - 86400 * 7)).fetchone()
+                    exists = conn.execute("SELECT 1 FROM sessions WHERE id=? AND created>?", (sid, time.time() - SESSION_RETENTION)).fetchone()
                     case = conn.execute("SELECT id,status,priority FROM cases WHERE session=? ORDER BY created DESC LIMIT 1", (sid,)).fetchone()
                 if not exists:
                     yield 'event: expired\ndata: {}\n\n'
@@ -358,6 +505,10 @@ def install(app):
         if not topic:
             topic = infer_topic(text)
         referrals = [r for r in get_directory() if r["category"] == topic["id"]]
+        if payload.region:
+            wanted = payload.region.strip().lower()
+            local = [r for r in referrals if wanted in {value.lower() for value in r["regions"]}]
+            referrals = local or referrals
         knowledge = reviewed_knowledge(topic["id"])
         urgent = bool(URGENT.search(normalized(text)))
         with connect() as conn:
@@ -397,60 +548,77 @@ def install(app):
         return {"reply": reply, "mode": mode, "triage": "urgent" if urgent else "routine", "referrals": referrals, "sources": knowledge, "case_id": case_id}
 
     @app.get("/admin/directory")
-    def admin_directory():
-        return get_directory()
+    def admin_directory(request: Request):
+        referrals = get_directory()
+        record_audit("directory.viewed", request.state.actor, "directory", "success", f"count={len(referrals)}")
+        return referrals
 
     @app.put("/admin/directory")
-    def save_directory(payload: DirectoryInput):
+    def save_directory(request: Request, payload: DirectoryInput):
         if payload.category not in [t["id"] for t in TOPICS] + ["emergency"]:
             raise HTTPException(422, "Unknown topic")
         if payload.phone and not re.fullmatch(r"[+0-9 ()-]+", payload.phone):
             raise HTTPException(422, "Phone must contain a dialable number")
+        unknown_channels = [c for c in payload.channels if c not in REFERRAL_CHANNELS]
+        if unknown_channels:
+            raise HTTPException(422, "Unknown contact channel")
+        record = payload.model_dump()
+        record["regions"] = payload.regions or [payload.region]
+        record["region"] = record["regions"][0]
         with connect() as conn:
-            conn.execute("INSERT OR REPLACE INTO directory VALUES(?,?)", (payload.id, payload.model_dump_json()))
-            conn.execute("INSERT INTO audit(action,created) VALUES(?,?)", ("directory-updated", time.time()))
-        return payload
+            conn.execute("INSERT OR REPLACE INTO directory VALUES(?,?)", (payload.id, json.dumps(record)))
+            record_audit("directory.updated", request.state.actor, payload.id, "success", verification_state(record), conn=conn)
+        return referral_view(record)
 
     @app.get("/admin/knowledge")
-    def list_knowledge():
+    def list_knowledge(request: Request):
         with connect() as conn:
-            return [{**json.loads(r["payload"]), "id": r["id"], "status": r["status"]} for r in conn.execute("SELECT * FROM knowledge")]
+            entries = [{**json.loads(r["payload"]), "id": r["id"], "status": r["status"]} for r in conn.execute("SELECT * FROM knowledge")]
+        record_audit("knowledge.viewed", request.state.actor, "knowledge", "success", f"count={len(entries)}")
+        return entries
 
     @app.post("/admin/knowledge")
-    def submit_knowledge(payload: KnowledgeInput):
+    def submit_knowledge(request: Request, payload: KnowledgeInput):
         kid = secrets.token_hex(12)
         with connect() as conn:
             conn.execute("INSERT INTO knowledge VALUES(?,?,?)", (kid, payload.model_dump_json(), "pending"))
+            record_audit("knowledge.submitted", request.state.actor, kid, "success", payload.category, conn=conn)
         return {"id": kid, "status": "pending"}
 
     @app.patch("/admin/knowledge/{knowledge_id}")
-    def review_knowledge(knowledge_id: str, payload: ReviewInput):
+    def review_knowledge(knowledge_id: str, request: Request, payload: ReviewInput):
         with connect() as conn:
-            result = conn.execute("UPDATE knowledge SET status=? WHERE id=?", (payload.status, knowledge_id))
-            if not result.rowcount:
-                raise HTTPException(404, "Entry not found")
-            conn.execute("INSERT INTO audit(action,created) VALUES(?,?)", ("knowledge-" + payload.status, time.time()))
+            if not conn.execute("UPDATE knowledge SET status=? WHERE id=?", (payload.status, knowledge_id)).rowcount:
+                found = False
+            else:
+                found = True
+                record_audit("knowledge." + payload.status, request.state.actor, knowledge_id, "success", conn=conn)
+        if not found:
+            record_audit("knowledge.reviewed", request.state.actor, knowledge_id, "not_found")
+            raise HTTPException(404, "Entry not found")
         return {"updated": True}
 
     @app.post("/support/check-link")
-    async def check_link(payload: dict):
+    async def check_link(payload: LinkCheckInput):
         async with httpx.AsyncClient(timeout=25, trust_env=False) as client:
             try:
-                response = await client.post(os.getenv("URL_SAFETY_URL", "http://127.0.0.1:8001") + "/check", json=payload)
+                response = await client.post(os.getenv("URL_SAFETY_URL", "http://127.0.0.1:8001") + "/check",
+                                             json={"url": payload.url, "consent": payload.consent})
                 return JSONResponse(response.json(), status_code=response.status_code)
             except (httpx.HTTPError, ValueError):
                 raise HTTPException(503, "Link checking is unavailable. No safety verdict was produced.")
 
     @app.get("/admin/queue")
-    def queue():
+    def queue(request: Request):
         with connect() as conn:
-            conn.execute("DELETE FROM sessions WHERE created < ?", (time.time() - 86400 * 7,))
+            conn.execute("DELETE FROM sessions WHERE created < ?", (time.time() - SESSION_RETENTION,))
             rows = conn.execute("SELECT * FROM cases ORDER BY CASE priority WHEN 'critical' THEN 0 ELSE 1 END, created DESC").fetchall()
-            conn.execute("INSERT INTO audit(action,created) VALUES(?,?)", ("queue-viewed", time.time()))
+            record_audit("queue.viewed", request.state.actor, "queue", "success", f"count={len(rows)}", conn=conn)
         return [{**dict(row), "messages": history(row["session"])} for row in rows]
 
     @app.get("/admin/events")
     async def moderator_events(request: Request):
+        record_audit("queue.streamed", request.state.actor, "queue", "success")
         async def stream():
             last = None
             deadline = time.monotonic() + 1800
@@ -467,22 +635,53 @@ def install(app):
         return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
     @app.patch("/admin/queue/{case_id}")
-    def update(case_id: str, payload: UpdateInput):
+    def update(case_id: str, request: Request, payload: UpdateInput):
         with connect() as conn:
-            result = conn.execute("UPDATE cases SET status=? WHERE id=?", (payload.status, case_id))
-            if not result.rowcount:
-                raise HTTPException(404, "Case not found")
-            conn.execute("INSERT INTO audit(action,created) VALUES(?,?)", ("case-status-updated", time.time()))
+            if not conn.execute("UPDATE cases SET status=? WHERE id=?", (payload.status, case_id)).rowcount:
+                found = False
+            else:
+                found = True
+                record_audit("case.status_updated", request.state.actor, case_id, "success", payload.status, conn=conn)
+        if not found:
+            record_audit("case.status_updated", request.state.actor, case_id, "not_found")
+            raise HTTPException(404, "Case not found")
         return {"updated": True}
 
     @app.post("/admin/queue/{case_id}/reply")
-    def human_reply(case_id: str, payload: ReplyInput):
+    def human_reply(case_id: str, request: Request, payload: ReplyInput):
         with connect() as conn:
-            case = conn.execute("SELECT * FROM cases WHERE id=?", (case_id,)).fetchone()
+            case = conn.execute("SELECT id,session FROM cases WHERE id=?", (case_id,)).fetchone()
         if not case:
+            record_audit("case.replied", request.state.actor, case_id, "not_found")
             raise HTTPException(404, "Case not found")
         save_message(case["session"], "human", payload.message)
         with connect() as conn:
             conn.execute("UPDATE cases SET status='in_progress' WHERE id=?", (case_id,))
-            conn.execute("INSERT INTO audit(action,created) VALUES(?,?)", ("moderator-reply", time.time()))
+            record_audit("case.replied", request.state.actor, case_id, "success", f"chars={len(payload.message)}", conn=conn)
         return {"sent": True}
+
+    @app.get("/admin/audit")
+    def audit(request: Request, actor: str | None = Query(default=None, max_length=60),
+              action: str | None = Query(default=None, max_length=60), limit: int = Query(default=100, ge=1, le=500)):
+        """Search the staff audit trail. No route edits or deletes an entry.
+
+        Each read is itself recorded, so the default listing hides those self-references;
+        pass action=audit.viewed to inspect who read the trail.
+        """
+        clauses, values = [], []
+        if actor:
+            clauses.append("actor=?")
+            values.append(actor)
+        if action:
+            clauses.append("action=?")
+            values.append(action)
+        else:
+            clauses.append("action!=?")
+            values.append("audit.viewed")
+        where = " WHERE " + " AND ".join(clauses)
+        with connect() as conn:
+            rows = [dict(row) for row in conn.execute(
+                f"SELECT id,action,actor,resource,outcome,detail,created FROM audit{where} ORDER BY id DESC LIMIT ?",
+                (*values, limit))]
+        record_audit("audit.viewed", request.state.actor, "audit", "success", f"count={len(rows)}")
+        return {"retention_days": 90, "entries": rows}
