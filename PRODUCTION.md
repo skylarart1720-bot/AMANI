@@ -12,13 +12,14 @@ Visitor and moderator conversations use server-sent events. Reverse proxies must
 
 - `CHAT_ENCRYPTION_KEY`: stable Fernet key, required in production. Back it up separately from encrypted data. Changing it without migrating data makes existing messages unreadable.
 - `ADMIN_API_TOKEN`: high-entropy moderator access token, required in production. Local mode generates one at `data/.admin-token` if none is configured.
+- `STAFF_ACCOUNT_TOKENS`, optional: JSON object of staff id to bearer token, for example `{"ada":"<token>"}`. Each moderator then signs in with their own token, audit rows record their staff id, and removing an id revokes that person at the next restart. Leave unset to use the single shared token.
 - `OPENAI_API_KEY`, optional `OPENAI_BASE_URL`, `OPENAI_MODEL`: configured model provider. The OpenAI implementation requests `store: false`; this does not negate the provider's other retention policies.
 - `SAFE_BROWSING_API_KEY` and/or `VIRUSTOTAL_API_KEY`: reputation lookup credentials. Confirm permitted use and quotas for your deployment.
 - Meta values: `META_WHATSAPP_TOKEN`, `META_WHATSAPP_PHONE_NUMBER_ID`, `META_WEBHOOK_VERIFY_TOKEN`, `META_APP_SECRET`, `META_WHATSAPP_API_VERSION`, and `WHATSAPP_PROVIDER=meta`.
 
 Never place provider keys or moderator tokens in `NEXT_PUBLIC_*` variables. Never expose `data/`, `.env`, `.runtime/` or the project folder through a static file server. Production secrets should be supplied by your hosting secret manager.
 
-The supplied moderator token is suitable for a controlled operator installation, not individual staff identity management. Before onboarding multiple organisations, integrate per-person authentication, roles, revocation and attributable access auditing. Current audit records track operations but do not distinguish people sharing a token.
+The supplied moderator token is suitable for a controlled operator installation, not individual staff identity management. Staff actions are now recorded in an audit trail with actor, action, affected record, outcome and time, and that trail is readable in the moderator workspace; it excludes message text, tokens and phone numbers, is removed after 90 days, and no route edits or deletes an entry. Attribution still depends on the credential: with `STAFF_ACCOUNT_TOKENS` configured a row names the staff id, and without it every row reads `shared-token`, so people sharing one token cannot be told apart. Individual accounts, MFA, role separation and automated revocation remain required before onboarding multiple organisations.
 
 ## Container deployment
 
