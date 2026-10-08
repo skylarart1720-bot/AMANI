@@ -14,12 +14,18 @@ type Referral = {
   organisation: string;
   category: string;
   region: string;
+  regions: string[];
   phone: string | null;
   website: string;
   notes: string;
   verified_at: string | null;
+  review_due: string | null;
   hours: string;
   languages: string[];
+  channels: string[];
+  trust: string;
+  evidence: string | null;
+  verification: "verified" | "stale" | "unverified";
 };
 type Entry = {
   id?: string;
@@ -30,6 +36,15 @@ type Entry = {
   source_url: string;
   verified_at: string;
   status?: string;
+};
+type AuditEntry = {
+  id: number;
+  action: string;
+  actor: string;
+  resource: string | null;
+  outcome: string;
+  detail: string | null;
+  created: number;
 };
 const blank: Entry = {
   title: "",
@@ -50,6 +65,27 @@ const categories = [
   "gender-rights",
   "mens-circle",
 ];
+const channels = ["phone", "website", "email", "in-person", "sms"];
+const trustTiers = ["official", "community", "unverified"];
+const blankReferral: Referral = {
+  id: "",
+  title: "",
+  organisation: "",
+  category: "protest-rights",
+  region: "Ghana",
+  regions: ["Ghana"],
+  phone: null,
+  website: "",
+  notes: "",
+  verified_at: null,
+  review_due: null,
+  hours: "Confirm with organisation",
+  languages: ["English"],
+  channels: ["website"],
+  trust: "unverified",
+  evidence: null,
+  verification: "unverified",
+};
 
 export default function Dashboard() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -63,6 +99,8 @@ export default function Dashboard() {
   const [reply, setReply] = useState("");
   const [editing, setEditing] = useState<Referral | null>(null);
   const [draft, setDraft] = useState<Entry>(blank);
+  const [audit, setAudit] = useState<AuditEntry[]>([]);
+  const [auditActor, setAuditActor] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -99,6 +137,16 @@ export default function Dashboard() {
     setLastUpdated(new Date().toLocaleTimeString());
     setAuthenticated(true);
   }, [api]);
+  const loadAudit = useCallback(
+    async (actor?: string) => {
+      const result = await api(
+        `admin/audit?limit=200${actor ? `&actor=${encodeURIComponent(actor)}` : ""}`,
+      );
+      setAudit(result.entries);
+      setLastUpdated(new Date().toLocaleTimeString());
+    },
+    [api],
+  );
   useEffect(() => {
     void refresh().catch(() => {});
   }, [refresh]);
@@ -198,7 +246,7 @@ export default function Dashboard() {
           </button>
         </div>
         <nav aria-label="Moderator views">
-          {["queue", "directory", "knowledge"].map((t) => (
+          {["queue", "directory", "knowledge", "audit"].map((t) => (
             <button
               key={t}
               className={t === tab ? "active" : ""}
@@ -206,13 +254,16 @@ export default function Dashboard() {
                 setTab(t);
                 setError("");
                 setNotice("");
+                if (t === "audit") void loadAudit(auditActor).catch((e) => setError(e.message));
               }}
             >
               {t === "queue"
                 ? "Support queue"
                 : t === "directory"
                   ? "Referral directory"
-                  : "Knowledge review"}
+                  : t === "knowledge"
+                    ? "Knowledge review"
+                    : "Audit log"}
             </button>
           ))}
         </nav>
@@ -378,21 +429,7 @@ export default function Dashboard() {
               <h2>Published referral contacts</h2>
               <button
                 className="primary"
-                onClick={() =>
-                  setEditing({
-                    id: "",
-                    title: "",
-                    organisation: "",
-                    category: "protest-rights",
-                    region: "Ghana",
-                    phone: null,
-                    website: "",
-                    notes: "",
-                    verified_at: null,
-                    hours: "Confirm with organisation",
-                    languages: ["English"],
-                  })
-                }
+                onClick={() => setEditing({ ...blankReferral })}
               >
                 Add organisation
               </button>
@@ -416,7 +453,6 @@ export default function Dashboard() {
                       "id",
                       "title",
                       "organisation",
-                      "region",
                       "phone",
                       "website",
                       "hours",
@@ -469,6 +505,116 @@ export default function Dashboard() {
                     }
                   />
                 </label>
+                <div className="form-grid">
+                  <label>
+                    Coverage areas (comma separated)
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ghana, International"
+                      value={editing.regions.join(", ")}
+                      onChange={(e) =>
+                        setEditing({
+                          ...editing,
+                          regions: e.target.value
+                            .split(",")
+                            .map((r) => r.trim())
+                            .filter(Boolean),
+                        })
+                      }
+                    />
+                    <small>
+                      Coarse areas only. Never record a precise visitor location.
+                      The first area is used as the primary coverage filter.
+                    </small>
+                  </label>
+                  <label>
+                    Languages served
+                    <input
+                      type="text"
+                      value={editing.languages.join(", ")}
+                      onChange={(e) =>
+                        setEditing({
+                          ...editing,
+                          languages: e.target.value
+                            .split(",")
+                            .map((l) => l.trim())
+                            .filter(Boolean),
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Trust tier
+                    <select
+                      value={editing.trust}
+                      onChange={(e) =>
+                        setEditing({ ...editing, trust: e.target.value })
+                      }
+                    >
+                      {trustTiers.map((tier) => (
+                        <option key={tier}>{tier}</option>
+                      ))}
+                    </select>
+                    <small>
+                      A listing is never a partnership or an endorsement.
+                    </small>
+                  </label>
+                  <label>
+                    Review due
+                    <input
+                      type="date"
+                      value={editing.review_due || ""}
+                      onChange={(e) =>
+                        setEditing({
+                          ...editing,
+                          review_due: e.target.value || null,
+                        })
+                      }
+                    />
+                    <small>
+                      Past this date the contact is shown as needing re-checking.
+                    </small>
+                  </label>
+                  <label>
+                    What you checked
+                    <input
+                      type="text"
+                      value={editing.evidence || ""}
+                      placeholder="Which page or channel confirmed the details"
+                      onChange={(e) =>
+                        setEditing({
+                          ...editing,
+                          evidence: e.target.value || null,
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+                <fieldset>
+                  <legend>Contact channels offered</legend>
+                  {channels.map((option) => (
+                    <label key={option} className="checkbox">
+                      <input
+                        type="checkbox"
+                        checked={editing.channels.includes(option)}
+                        onChange={(e) =>
+                          setEditing({
+                            ...editing,
+                            channels: e.target.checked
+                              ? [...editing.channels, option]
+                              : editing.channels.filter((c) => c !== option),
+                          })
+                        }
+                      />
+                      {option}
+                    </label>
+                  ))}
+                </fieldset>
+                <p className="muted">
+                  Saving is a public change. Leave the check date blank if the
+                  details were not confirmed; the listing will say so honestly.
+                </p>
                 <div className="actions">
                   <button type="button" onClick={() => setEditing(null)}>
                     Cancel
@@ -485,8 +631,8 @@ export default function Dashboard() {
                   <tr>
                     <th>Organisation</th>
                     <th>Category</th>
-                    <th>Contact</th>
-                    <th>Last checked</th>
+                    <th>Coverage</th>
+                    <th>Contact status</th>
                     <th />
                   </tr>
                 </thead>
@@ -495,11 +641,86 @@ export default function Dashboard() {
                     <tr key={r.id}>
                       <td>{r.organisation}</td>
                       <td>{r.category}</td>
-                      <td>{r.phone || "Website"}</td>
-                      <td>{r.verified_at || "Needs confirmation"}</td>
+                      <td>{r.regions.join(", ")}</td>
                       <td>
-                        <button onClick={() => setEditing(r)}>Edit</button>
+                        <strong>{r.verification}</strong>
+                        <br />
+                        <small className="muted">
+                          {r.verified_at
+                            ? `Checked ${r.verified_at}`
+                            : "Needs confirmation"}
+                          {r.review_due ? ` · review due ${r.review_due}` : ""}
+                        </small>
                       </td>
+                      <td>
+                        <button onClick={() => setEditing({ ...r })}>
+                          Edit
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+        {tab === "audit" && (
+          <>
+            <div className="heading">
+              <div>
+                <h2>Staff audit log</h2>
+                <p className="muted">
+                  Who did what, to which record, and whether it succeeded. Message
+                  text, tokens and phone numbers are never recorded here. Entries
+                  are removed after 90 days and cannot be edited.
+                </p>
+              </div>
+              <div className="actions">
+                <label>
+                  Filter by staff id
+                  <input
+                    type="text"
+                    value={auditActor}
+                    placeholder="all staff"
+                    onChange={(e) => setAuditActor(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void perform(() => loadAudit(auditActor));
+                      }
+                    }}
+                  />
+                </label>
+                <button
+                  disabled={busy}
+                  onClick={() => void perform(() => loadAudit(auditActor))}
+                >
+                  Apply
+                </button>
+              </div>
+            </div>
+            {!audit.length && <p className="empty">No audit entries to show.</p>}
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Staff</th>
+                    <th>Action</th>
+                    <th>Record</th>
+                    <th>Outcome</th>
+                    <th>Detail</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {audit.map((row) => (
+                    <tr key={row.id}>
+                      <td>{new Date(row.created * 1000).toLocaleString()}</td>
+                      <td>{row.actor}</td>
+                      <td>{row.action}</td>
+                      <td>{row.resource || "—"}</td>
+                      <td>{row.outcome}</td>
+                      <td className="muted">{row.detail || "—"}</td>
                     </tr>
                   ))}
                 </tbody>

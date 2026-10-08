@@ -94,7 +94,9 @@ const french: Record<string, string> = {
     "Coordonnées à confirmer auprès de l'organisme",
   "Confirm with organisation": "À confirmer auprès de l'organisme",
   "24 hours": "24 h/24",
+  Ghana: "Ghana",
   International: "International",
+  Email: "Courriel",
   "Search organisations": "Rechercher un organisme",
   "Search by topic or organisation": "Rechercher par thème ou organisme",
   "Coverage area": "Zone de couverture",
@@ -211,6 +213,13 @@ export function translate(value: string, language: Language): string {
   if (french[text]) return value.replace(text, french[text]);
   if (text.startsWith("Contact checked "))
     return value.replace("Contact checked ", "Coordonnées vérifiées le ");
+  if (text.startsWith("Last checked "))
+    return value
+      .replace("Last checked ", "Dernière vérification le ")
+      .replace(
+        ". Needs re-checking before you rely on it.",
+        ". À revérifier avant de vous y fier.",
+      );
   if (text.startsWith("Checked "))
     return value.replace("Checked ", "Vérifié le ");
   if (text.startsWith("Visit ")) return value.replace("Visit ", "Consulter ");
