@@ -25,6 +25,8 @@ services:
       AMANI_DATA_DIR: /data
       CHAT_ENCRYPTION_KEY: ${CHAT_ENCRYPTION_KEY:?Set CHAT_ENCRYPTION_KEY}
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?Set ADMIN_API_TOKEN}
+      # Optional JSON object of staff id to bearer token for per-person attribution.
+      STAFF_ACCOUNT_TOKENS: ${STAFF_ACCOUNT_TOKENS:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}

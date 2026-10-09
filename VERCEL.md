@@ -2,6 +2,20 @@
 
 The repository contains two independently deployable Next.js apps. Both need the Python API to provide working conversations and moderator operations. Vercel does not run this repository's Docker Compose stack. The current support database uses local SQLite and requires a persistent backend disk; setting DATABASE_URL does not migrate the support workflow to PostgreSQL.
 
+## Current deployments
+
+Recorded so an operator does not have to reconstruct them from project history. Confirm ownership and that each still points at the expected backend before relying on any of them.
+
+| Component | Project | URL |
+| --- | --- | --- |
+| Public website | `amani` | `https://amani-navy.vercel.app` |
+| Moderator dashboard | `amani-hck2` | `https://amani-hck2.vercel.app` |
+| Backend API | Railway project | Record the public HTTPS origin here |
+
+The backend origin is deliberately left blank rather than guessed. Copy it from the orchestrator's public domain in the Railway networking settings, without a trailing slash, and paste it into `ORCHESTRATOR_URL` for both Vercel projects. A Railway dashboard link is a control panel, not an API origin. Until it is recorded here, nobody can confirm which backend the frontends are talking to.
+
+As of 9 October 2026 both frontends answer on HTTPS and the public site reports a connected support service with AI and the link scanner configured. Moderator access still uses the shared token described in section 3.
+
 ## 1. Deploy the backend first
 
 Use a container host or server with persistent disk storage. Existing Dockerfiles are in `apps/orchestrator` and `services/url-safety`; set each service's build context to that directory. Run one orchestrator instance with one worker. The orchestrator listens on port 8000; the scanner listens on port 8001. Both expose `/health`.
@@ -75,3 +89,24 @@ AI credit must be available for live AI replies. WhatsApp is optional and requir
 See [FUNDER_PREVIEW.md](FUNDER_PREVIEW.md) for a demonstration script. A successful frontend deployment alone does not establish a working backend or public-launch readiness.
 
 Official references: [Vercel monorepos](https://vercel.com/docs/monorepos), [environment variables](https://vercel.com/docs/environment-variables), [SQLite limitations](https://vercel.com/kb/guide/is-sqlite-supported-in-vercel), [function limits](https://vercel.com/docs/functions/limitations), [deployment protection](https://vercel.com/docs/deployment-protection).
+
+## 5. Record what you verified
+
+Deployment steps are not evidence. After any change, note the commit SHA each surface is running and how you confirmed it, so the next operator does not have to guess. Useful checks:
+
+```powershell
+# Public site and backend health (read-only, no data written)
+curl.exe -s https://amani-navy.vercel.app/api/support/status
+
+# Which backend code is live: pre-merge this has no "verification" field
+curl.exe -s "https://amani-navy.vercel.app/api/support/directory?region=Ghana"
+
+# Whether the moderator allowlist includes admin/audit: 401 means new code, 404 means old
+curl.exe -s -o NUL -w "%{http_code}" https://amani-hck2.vercel.app/api/admin/audit
+
+# Database migration state, run on the backend host with an authorised session
+# PRAGMA table_info(audit);   -- expect actor, resource, outcome, detail
+# PRAGMA integrity_check;
+```
+
+Only `GET` requests are safe against the live deployment. Do not use them to create sessions, post chats or call `check-link` during routine verification.

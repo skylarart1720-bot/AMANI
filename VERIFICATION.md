@@ -19,9 +19,50 @@ The original PDF and extracted blueprint were inspected. New public conversation
 - Frontend dependency installs/audits: zero reported npm vulnerabilities after Next.js/PostCSS updates.
 - Python dependency audit: not completed. Installing `pip-audit` failed because `files.pythonhosted.org` was unreachable. This must not be reported as a clean backend dependency audit.
 
-## What the audit trail does and does not prove
+## Production verification, 9 October 2026
 
-Attribution depends on how a moderator authenticated. With `STAFF_ACCOUNT_TOKENS` configured, audit rows carry the individual staff id and removing an id revokes that person's access. Without it, the shared `ADMIN_API_TOKEN` is the only credential, so every row reads `shared-token`: the trail proves what was done and that an authorised credential did it, but not which person held the token. Individual accounts, MFA and role separation are still outstanding. Transcript reads, replies and content edits are recorded without message text, tokens or phone numbers; audit rows are removed after 90 days and no route edits or deletes them.
+A read-only verification pass was run against the merged deployment (`main` at `3160394`) and the local stack. No production data was written: only `GET` requests were issued against the live deployments, and no administrator token was submitted to production.
+
+Deployment was established by fingerprint rather than assumption. `/api/support/directory` returning `verification`, `regions`, `channels` and `trust` shows the orchestrator runs the merged code; `/api/admin/audit` returning `401 "Sign in to continue"` rather than `404` shows the moderator proxy runs the new allowlist.
+
+| Area | Result | Evidence |
+| --- | --- | --- |
+| Merge state | PASS | PR #1 merged 06:56:46Z, `main` = `3160394` |
+| Public site reachable | PASS | `/api/support/status` HTTP 200, backend online |
+| Moderator proxy allowlist | PASS | `/api/support/status` on the moderator host returns 404 |
+| Staff sign-in | PASS | whitespace-padded token accepted, HttpOnly, SameSite=strict |
+| Audit log and staff filter | PASS after fix | see "Proxy query forwarding" below |
+| Case reply round trip | PASS | visitor received `role=human`, case moved to `in_progress` |
+| Referral create and read | PASS | synthetic record written, then removed |
+| Region filtering | PASS after fix | `?region=Ghana` returns 6 of 10 |
+| Verification labels | PASS | 8 `unverified`, 2 `verified` in the seeded directory |
+| Chat, English and French | PASS | correct topic inference and localised directory replies |
+| Urgent routing | PASS | `triage=urgent`, 112 present, AI not called, case created |
+| 401 unauthenticated admin | PASS | all four admin routes plus a bad token |
+| 413 oversized body | PASS | declared and chunked bodies both rejected |
+| 422 validation | PASS | empty, over-length, missing and malformed bodies |
+| Local migration state | PASS | all four audit columns present, `integrity_check` ok |
+| GitHub Actions on `main` | PASS | five jobs successful |
+
+### Defect found and fixed after the merge
+
+Both Next.js proxies built the upstream URL from the catch-all path alone and never appended the query string, so every query parameter was silently discarded. The public website still appeared correct because the visitor interface filters client-side. It also disabled the `action` and `actor` search on the audit log. `scripts/origin_check.py` now asserts that a filtered directory response is smaller than the unfiltered one, so a proxy that drops parameters fails the check instead of quietly returning everything.
+
+### Not verified, and why
+
+These are open questions, not passes. No Railway or Vercel control-panel access was available, and no administrator credential was used against production.
+
+- **Production migration state.** The `verification` field is derived in Python at read time, so its presence does not prove the audit columns exist in the production database. Run `PRAGMA table_info(audit)` on the backend host to confirm.
+- **Per-person attribution.** `STAFF_ACCOUNT_TOKENS` is documented and now wired through Compose, but was not set in any environment. Until it is, every production audit row reads `shared-token` and two people sharing the token cannot be told apart. This is the largest outstanding gap.
+- **Persistence, backups and restore.** Not exercised. A consistent SQLite backup, an isolated restore and a proof that ciphertext and case links survive remain required before launch.
+- **Alerting and monitoring.** No evidence any alert fires on service failure, queue age or failed WhatsApp jobs.
+- **Hosted streaming.** Serverless request-duration limits apply to the proxy routes; the local realtime check does not establish hosted reliability.
+- **Railway configuration.** Private networking, volume mounts, deployed SHAs and health checks were not inspected.
+- **WhatsApp.** Activation remains unconfirmed and was not tested.
+
+### Security risks still open
+
+Shared staff token and no MFA (both high). Rate limiting is in-memory per process, so it resets on restart and is not shared between replicas. CSRF protection rests entirely on the Origin check, which is skipped for `GET`. `/support/check-link` is unauthenticated and limited per IP only. The Python dependency audit has still never completed.
 
 A referral labelled `verified` means a staff member recorded a check date that has not passed its review date. It is not evidence of a partnership, of current availability or of a confirmed staffed service. `stale` means the check date has passed the review date and the contact needs re-checking; `unverified` means no check was recorded.
 
