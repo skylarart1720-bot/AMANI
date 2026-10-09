@@ -20,3 +20,11 @@ def isolate_legacy_store(tmp_path, monkeypatch):
     import main
     monkeypatch.setattr(main, "DB_PATH", tmp_path / "legacy.db")
     main.initialize_database()
+
+@pytest.fixture(autouse=True)
+def reset_rate_limits():
+    """The per-IP limiter is shared state; clear it so one test cannot exhaust another's budget."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+    import main
+    main.app.state.rate_buckets.clear()

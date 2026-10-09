@@ -39,11 +39,18 @@ type Referral = {
   organisation: string;
   category: string;
   region: string;
-  phone?: string;
+  regions: string[];
+  phone?: string | null;
   website: string;
   notes: string;
   hours: string;
-  verified_at?: string;
+  languages: string[];
+  channels: string[];
+  trust: "official" | "community" | "unverified";
+  verified_at?: string | null;
+  review_due?: string | null;
+  evidence?: string | null;
+  verification: "verified" | "stale" | "unverified";
 };
 type Message = { id: number; role: string; content: string; created: number };
 type Status = { ai_configured: boolean; scanner_configured: boolean };
@@ -371,20 +378,31 @@ export default function Page() {
   };
   const filtered = referrals.filter(
     (r) =>
-      (region === "all" || r.region === region) &&
-      `${translate(r.title, language)} ${r.organisation} ${translate(r.notes, language)}`
+      (region === "all" || r.regions.includes(region)) &&
+      `${translate(r.title, language)} ${r.organisation} ${translate(r.notes, language)} ${r.languages.join(" ")}`
         .toLowerCase()
         .includes(query.toLowerCase()),
   );
 
+  const areas = [
+    "all",
+    ...Array.from(new Set(referrals.flatMap((r) => r.regions))).sort(),
+  ];
+
   const referralItem = (r: Referral) => (
     <article className="referral" key={r.id}>
       <div className="referral-meta">
-        <span>{r.region}</span>
+        <span>{r.regions.join(", ")}</span>
         <span>{r.hours}</span>
       </div>
       <h3>{r.organisation}</h3>
       <p>{r.notes}</p>
+      <div className="referral-meta">
+        {r.languages.slice(0, 3).map((item) => (
+          <span key={item}>{item}</span>
+        ))}
+        {r.channels.includes("email") && <span>Email</span>}
+      </div>
       <div className="referral-actions">
         {r.phone && (
           <a className="button primary small" href={`tel:${r.phone}`}>
@@ -401,9 +419,11 @@ export default function Page() {
         </a>
       </div>
       <small>
-        {r.verified_at
+        {r.verification === "verified" && r.verified_at
           ? `Contact checked ${r.verified_at}`
-          : "Contact details need confirmation with the organisation"}
+          : r.verification === "stale"
+            ? `Last checked ${r.verified_at}. Needs re-checking before you rely on it.`
+            : "Contact details need confirmation with the organisation"}
       </small>
     </article>
   );
@@ -808,9 +828,11 @@ export default function Page() {
                   value={region}
                   onChange={(e) => setRegion(e.target.value)}
                 >
-                  <option value="all">All coverage areas</option>
-                  <option>Ghana</option>
-                  <option>International</option>
+                  {areas.map((option) => (
+                    <option key={option} value={option}>
+                      {option === "all" ? "All coverage areas" : option}
+                    </option>
+                  ))}
                 </select>
               </div>
               <p className="results-count">

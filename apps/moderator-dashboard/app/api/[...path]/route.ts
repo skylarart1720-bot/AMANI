@@ -62,7 +62,7 @@ async function proxy(
       return NextResponse.json({ ok: true });
     }
     if (
-      !/^admin\/(events|queue(?:\/[A-Z0-9-]+(?:\/reply)?)?|directory|knowledge(?:\/[a-f0-9]+)?)$/.test(
+      !/^admin\/(events|queue(?:\/[A-Z0-9-]+(?:\/reply)?)?|directory|knowledge(?:\/[a-f0-9]+)?|audit)$/.test(
         path,
       )
     )
