@@ -91,8 +91,11 @@ async function proxy(
       signal:
         path === "admin/events" ? request.signal : AbortSignal.timeout(10000),
     });
+    // Pass the upstream status through: without it an upstream auth or rate-limit
+    // failure on the event stream is reported to the browser as a healthy 200.
     if (result.headers.get("content-type")?.includes("text/event-stream"))
       return new NextResponse(result.body, {
+        status: result.status,
         headers: {
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-store",
