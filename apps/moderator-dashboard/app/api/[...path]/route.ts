@@ -79,7 +79,8 @@ async function proxy(
         { detail: "Request too large" },
         { status: 413 },
       );
-    const result = await fetch(`${base}/${path}`, {
+    // admin/audit is filtered by staff id and action, so carry the search upstream.
+    const result = await fetch(`${base}/${path}${request.nextUrl.search}`, {
       method: request.method,
       headers: {
         Authorization: `Bearer ${token}`,
