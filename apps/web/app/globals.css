@@ -1086,3 +1086,36 @@ select {
   .topbar .brand-mark { display: none; }
   .topbar .brand { font-size: 20px; }
 }
+.online-support { margin-bottom: 24px; padding: 22px; border: 1px solid #dce8e0; background: #f7fbf8; border-radius: 16px; }
+.online-support h2 { font-size: 21px; margin: 5px 0 8px; }
+.language-banner { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 24px; margin: 0 0 24px; padding: 16px 20px; border: 1px solid #d8e4dc; border-radius: 14px; background: linear-gradient(115deg, #f1f7f2, #fffcf0); color: #304537; }
+.language-banner strong { font-size: 14px; }
+.language-banner p { font-size: 12px; line-height: 1.65; margin: 4px 0 0; max-width: 440px; }
+.language-control select { width: auto; max-width: 160px; min-height: 40px; }
+.message-tools { margin-top: 10px; }
+.message-tools button { background: transparent; border: 1px solid #cad8cf; border-radius: 8px; padding: 7px 10px; font-size: 12px; color: #25452f; }
+.message-tools button:disabled { opacity: .6; cursor: not-allowed; }
+.translated-reply { border-inline-start: 3px solid #278148; padding-inline-start: 12px; margin-top: 12px; }
+.translated-reply small { display: block; font-size: 11px; line-height: 1.5; }
+.referral { transition: box-shadow .2s, border-color .2s; overflow-wrap: anywhere; }
+.referral:hover { box-shadow: 0 8px 24px #143a2210; border-color: #b6cebd; }
+[dir="rtl"] .sidebar { border-left: 1px solid var(--line); border-right: 0; }
+[dir="rtl"] .online-person, [dir="rtl"] .message { text-align: right; }
+[dir="rtl"] input[type="url"], [dir="rtl"] input[type="password"] { direction: ltr; }
+[dir="rtl"] .message p[data-original-text] { unicode-bidi: plaintext; }
+@media (max-width: 640px) { .topbar .language-control select { width: auto; max-width: 110px; font-size: 12px; } .language-banner { padding: 14px; } }
+.online-support p { color: #55665c; font-size: 14px; }
+.online-staff-list { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.online-person { display: flex; align-items: center; gap: 12px; padding: 13px 16px; border-radius: 12px; border: 1px solid #cbded1; background: white; color: #203b2b; text-align: left; min-width: 180px; max-width: 100%; }
+.online-person small { display: block; color: #237841; font-size: 12px; margin-top: 4px; }
+.presence-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #a0a8a2; flex-shrink: 0; }
+.presence-dot.online { background: #16a34a; box-shadow: 0 0 0 4px #16a34a18; }
+.human-choice { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.human-choice p { width: 100%; }
+.whatsapp-panel { max-width: 740px; padding: 30px; border: 1px solid #dce8e0; border-radius: 18px; background: white; }
+.whatsapp-panel p { line-height: 1.75; margin: 18px 0; }
+.channel-status { display: inline-block; padding: 5px 12px; border-radius: 20px; font-size: 13px; background: #fff1d6; color: #84560e; }
+.channel-status.ready { background: #e0f4e6; color: #237841; }
+.button.whatsapp-chat { background: #198647; border-color: #198647; color: white; }
+.button.whatsapp-chat:hover { background: #126b38; color: white; }
+@media (max-width: 600px) { .online-support { padding: 16px; } .online-person { width: 100%; min-width: 0; } .whatsapp-panel { padding: 20px; } }

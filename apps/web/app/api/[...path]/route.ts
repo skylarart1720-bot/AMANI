@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 const allowed = new Set([
   "support/status",
+  "support/staff",
   "support/directory",
   "support/sessions",
   "support/messages",
@@ -10,6 +11,8 @@ const allowed = new Set([
   "support/chat",
   "support/handoff",
   "support/check-link",
+  "support/translate",
+  "support/languages",
 ]);
 
 async function proxy(
@@ -17,7 +20,7 @@ async function proxy(
   context: { params: Promise<{ path: string[] }> },
 ) {
   const path = (await context.params).path.join("/");
-  if (!allowed.has(path))
+  if (!allowed.has(path) && !/^support\/languages\/[a-zA-Z-]+$/.test(path))
     return NextResponse.json({ detail: "Not found" }, { status: 404 });
   if (request.method !== "GET") {
     const origin = request.headers.get("origin");

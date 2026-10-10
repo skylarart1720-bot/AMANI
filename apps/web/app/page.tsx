@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Language, localize, translate } from "./localization";
+import { Language, languageOptions, localize, translate, useLanguage } from "./localization";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -53,7 +53,8 @@ type Referral = {
   verification: "verified" | "stale" | "unverified";
 };
 type Message = { id: number; role: string; content: string; created: number };
-type Status = { ai_configured: boolean; scanner_configured: boolean };
+type Status = { ai_configured: boolean; scanner_configured: boolean; whatsapp_configured: boolean; whatsapp_url: string | null };
+type OnlineStaff = {id: string; label: string; role: string; online: boolean};
 type Verdict = {
   verdict: string;
   reasons: string[];
@@ -65,17 +66,26 @@ const tabs = [
   { id: "topics", label: "Support topics", icon: HeartHandshake },
   { id: "directory", label: "Find help", icon: Users },
   { id: "links", label: "Check a link", icon: ShieldCheck },
+  { id: "whatsapp", label: "WhatsApp", icon: MessageCircle },
 ];
 
 export default function Page() {
-  const [language, setLanguage] = useState<Language>("en");
+  const {language, setLanguage, coverage} = useLanguage();
+  const [translations, setTranslations] = useState<Record<number, {language: string; text: string}>>({});
+  const [translating, setTranslating] = useState<number | null>(null);
+  useEffect(() => setTranslations({}), [language]);
   const [sessionToken, setSessionToken] = useState("");
+  useEffect(() => setTranslations({}), [sessionToken]);
   const [tab, setTab] = useState("chat");
   const [menu, setMenu] = useState(false);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [status, setStatus] = useState<Status | null>(null);
   const [online, setOnline] = useState(false);
+  const [onlineStaff, setOnlineStaff] = useState<OnlineStaff[]>([]);
+  const [choosingStaff, setChoosingStaff] = useState(false);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [staffError, setStaffError] = useState("");
   const [topic, setTopic] = useState("");
   const [query, setQuery] = useState("");
   const [region, setRegion] = useState("all");
@@ -88,6 +98,7 @@ export default function Page() {
   const [caseInfo, setCaseInfo] = useState<{
     id: string;
     status: string;
+    assignee?: string | null;
   } | null>(null);
   const [related, setRelated] = useState<Referral[]>([]);
   const [url, setUrl] = useState("");
@@ -144,7 +155,6 @@ export default function Page() {
   useEffect(() => {
     token.current = sessionStorage.getItem("amani-session") || "";
     setSessionToken(token.current);
-    setLanguage(localStorage.getItem("amani-language") === "fr" ? "fr" : "en");
     const load = async () => {
       try {
         const data = await api("directory");
@@ -175,8 +185,19 @@ export default function Page() {
     return () => clearInterval(timer);
   }, [api, refreshMessages]);
   useEffect(() => {
-    document.documentElement.lang = language;
-  }, [language]);
+    let active = true;
+    const loadStaff = async () => {
+      try {
+        const result = await api("staff");
+        if (active) { setOnlineStaff(result.staff); setStaffError(""); }
+      } catch {
+        if (active) { setOnlineStaff([]); setStaffError("Online availability could not be checked. Please retry."); }
+      }
+    };
+    void loadStaff();
+    const timer = setInterval(() => void loadStaff(), 10000);
+    return () => { active = false; clearInterval(timer); };
+  }, [api]);
   useEffect(() => {
     if (!sessionToken) return;
     const controller = new AbortController();
@@ -303,19 +324,28 @@ export default function Page() {
       if (current === generation.current) setBusy(false);
     }
   };
-  const handoff = async () => {
+  const handoff = async (staffId?: string) => {
     setError("");
     setBusy(true);
     try {
       await ensureSession();
-      const data = await api("handoff", "POST");
+      const data = await api("handoff", "POST", {staff_id: staffId || null});
       setCaseInfo(data);
+      setChoosingStaff(false);
       setNotice(data.message);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
     }
+  };
+  const requestHuman = async () => {
+    setChoosingStaff(true); setStaffLoading(true); setStaffError("");
+    try {
+      const data = await api("staff"); setOnlineStaff(data.staff);
+    } catch {
+      setOnlineStaff([]); setStaffError("Online availability could not be checked. Please retry.");
+    } finally { setStaffLoading(false); }
   };
   const clear = async () => {
     setError("");
@@ -395,7 +425,7 @@ export default function Page() {
         <span>{r.regions.join(", ")}</span>
         <span>{r.hours}</span>
       </div>
-      <h3>{r.organisation}</h3>
+      <h3 data-original-text>{r.organisation}</h3>
       <p>{r.notes}</p>
       <div className="referral-meta">
         {r.languages.slice(0, 3).map((item) => (
@@ -455,8 +485,7 @@ export default function Page() {
                 localStorage.setItem("amani-language", value);
               }}
             >
-              <option value="en">EN</option>
-              <option value="fr">FR</option>
+              {languageOptions.map((item) => <option key={item.code} value={item.code} data-original-text>{item.native}</option>)}
             </select>
           </label>
           <span className="location">
@@ -531,6 +560,7 @@ export default function Page() {
                     ? "Support for what matters."
                     : tab === "directory"
                       ? "Find your next point of support."
+                      : tab === "whatsapp" ? "Support on WhatsApp."
                       : "Pause. Check the link."}
               </h1>
               <p>
@@ -540,6 +570,7 @@ export default function Page() {
                     ? "Nine pathways. Your questions are welcome in all of them."
                     : tab === "directory"
                       ? "Connect with organisations in Ghana and beyond."
+                      : tab === "whatsapp" ? "Another way to stay connected with AMANI."
                       : "Look up a suspicious URL without opening it."}
               </p>
             </div>
@@ -548,6 +579,10 @@ export default function Page() {
               {online ? "Support service connected" : "Connecting to support"}
             </span>
           </div>
+          <section className="language-banner" aria-label="Multilingual support">
+            <div><strong>Multilingual support</strong><p>Choose your language for the interface and new AI replies.</p></div>
+            {language !== "en" && <p role="status">{coverage.status === "generating" ? "Preparing translations…" : coverage.status !== "complete" ? "Some text remains in English. Full translation is unavailable right now." : "Translation wording needs native-speaker review."}</p>}
+          </section>
           {error && (
             <div className="alert error" role="alert">
               {error}
@@ -566,6 +601,12 @@ export default function Page() {
             </div>
           )}
           {tab === "chat" && (
+            <>
+            <section className="online-support" aria-label="Online human support">
+              <div><p className="eyebrow">HUMAN SUPPORT</p><h2>Choose someone to talk to</h2><p>Online staff appear below. Your conversation stays here.</p></div>
+              {staffError ? <p role="status">{staffError}</p> : staffLoading ? <p>Checking availability...</p> : onlineStaff.length ? <div className="online-staff-list">{onlineStaff.map((person) => <button className="online-person" key={person.id} onClick={() => void handoff(person.id)} disabled={busy}><span className="presence-dot online" /><span><strong data-original-text={person.role !== "super_admin"}>{person.label}</strong><small>Online · {person.role === "super_admin" ? "Super Admin" : "Staff"}</small></span><ArrowRight size={16} /></button>)}</div> : <p className="muted">No support staff are online right now. You can still join the general queue.</p>}
+              {choosingStaff && <div className="human-choice"><p>Select an online person above, or leave your request in the general queue.</p><button className="button secondary" disabled={busy} onClick={() => void handoff()}>Join general queue</button><button className="text-link" onClick={() => setChoosingStaff(false)}>Cancel</button></div>}
+            </section>
             <div className="support-layout">
               <section className="chat-tool" aria-label="Support conversation">
                 <div className="chat-header">
@@ -637,6 +678,15 @@ export default function Page() {
                             : "Amani"}
                       </span>
                       <p data-original-text>{m.content}</p>
+                      {m.role !== "user" && <div className="message-tools">
+                        <button disabled={!aiConsent || translating !== null} title={!aiConsent ? "AI consent is required to translate a reply." : "Translate reply"} onClick={async () => {
+                          setTranslating(m.id); setError("");
+                          try { const currentGeneration = generation.current; const result = await api("translate", "POST", {message_id: m.id, language, ai_consent: aiConsent}); if (currentGeneration === generation.current) setTranslations((old) => ({...old, [m.id]: {language, text: result.translation}})); }
+                          catch (e) { setError((e as Error).message); }
+                          finally { setTranslating(null); }
+                        }}>Translate reply</button>
+                        {translations[m.id]?.language === language && <div className="translated-reply"><small>Automatic translation can make mistakes. Verify important information with the service.</small><p data-original-text dir="auto">{translations[m.id].text}</p></div>}
+                      </div>}
                       <time>
                         {new Date(m.created * 1000).toLocaleTimeString([], {
                           hour: "2-digit",
@@ -657,7 +707,7 @@ export default function Page() {
                     <Users size={16} />
                     <span>
                       Human support request {caseInfo.id}:{" "}
-                      {caseInfo.status.replace("_", " ")}. Response time is not
+                      {caseInfo.status.replace("_", " ")}{caseInfo.assignee ? ` · ${caseInfo.assignee === "super-admin" ? "Super Admin" : caseInfo.assignee}` : ""}. Response time is not
                       guaranteed.
                     </span>
                   </div>
@@ -731,15 +781,16 @@ export default function Page() {
                   </p>
                   <button
                     className="button secondary"
-                    onClick={handoff}
+                    onClick={() => { void requestHuman(); document.querySelector(".online-support")?.scrollIntoView({behavior: "smooth", block: "start"}); }}
                     disabled={busy}
                   >
                     <Users size={17} /> Request human support
                   </button>
                   <small>
-                    Requests are queued. Availability is not guaranteed.
+                    Choose an online person above or join the general queue.
                   </small>
                 </div>
+                <div className="aside-section"><p className="eyebrow">WHATSAPP</p><h3>Stay connected on WhatsApp</h3><p>{status?.whatsapp_url ? "Open a conversation with AMANI on WhatsApp." : "WhatsApp setup is pending. Web support is available here."}</p>{status?.whatsapp_url ? <a className="button primary whatsapp-chat" href={status.whatsapp_url} target="_blank" rel="noopener noreferrer"><MessageCircle size={18} /> Chat on WhatsApp <ArrowUpRight size={16} /></a> : <button className="button primary whatsapp-chat" onClick={() => navigate("whatsapp")}><MessageCircle size={18} /> Chat on WhatsApp <ArrowRight size={16} /></button>}</div>
                 <div className="aside-section">
                   <p className="eyebrow">DIRECT SUPPORT</p>
                   {related.length ? (
@@ -773,7 +824,16 @@ export default function Page() {
                 </div>
               </aside>
             </div>
+            </>
           )}
+          {tab === "whatsapp" && <section className="whatsapp-panel">
+            <MessageCircle size={38} /><h2>AMANI on WhatsApp</h2>
+            <span className={`channel-status ${status?.whatsapp_url ? "ready" : "pending"}`}>{status?.whatsapp_url ? "Available" : "Setup pending"}</span>
+            <p>Chat with AMANI from WhatsApp. Meta receives your phone number; you can continue using anonymous web support instead.</p>
+            {status?.whatsapp_url ? <a className="button primary whatsapp-chat" href={status.whatsapp_url} target="_blank" rel="noopener noreferrer">Chat on WhatsApp <ArrowUpRight size={17} /></a> : <p>The public WhatsApp business number has not been configured. Web support is available here.</p>}
+            {status?.whatsapp_configured ? <p>When connected, use <strong data-original-text>human</strong> to request support, <strong data-original-text>updates</strong> to collect human replies, and <strong data-original-text>forget</strong> to delete your AMANI conversation. AI replies require opt-in.</p> : <p>Automated WhatsApp support is awaiting setup. A configured chat link can still open the business conversation.</p>}
+            <button className="button secondary" onClick={() => navigate("chat")}>Continue with web support</button>
+          </section>}
           {tab === "topics" && (
             <div className="topic-grid">
               {topics.map((t, i) => (
@@ -791,7 +851,7 @@ export default function Page() {
                         setTopic(t.id);
                         navigate("chat");
                         setInput(
-                          language === 'fr' ? `Je souhaite du soutien : ${translate(t.title, language).toLowerCase()}.` : `I would like support with ${t.title.toLowerCase()}.`,
+                          translate("I would like support with {topic}.", language).replace("{topic}", translate(t.title, language)),
                         );
                       }}
                     >
@@ -1012,8 +1072,7 @@ export default function Page() {
                 <p>
                   This is not an emergency service. In Ghana, call 112 for
                   immediate danger. Human response times are not guaranteed.
-                  The interface is available in English and French. Reviewed
-                  source documents retain their original language.
+                  Choose a language for the interface and new AI replies. Some translations need completion and native-speaker review. Reviewed source documents and original chat messages retain their original language.
                 </p>
               </>
             ) : (

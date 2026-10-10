@@ -53,6 +53,7 @@ def main():
     ports = {"api": free_port(8100), "scanner": free_port(8200), "web": free_port(3000), "moderator": free_port(3100), "whatsapp": free_port(8300)}
     env["ORCHESTRATOR_URL"] = f"http://127.0.0.1:{ports['api']}"
     env["URL_SAFETY_URL"] = f"http://127.0.0.1:{ports['scanner']}"
+    env["WHATSAPP_GATEWAY_URL"] = f"http://127.0.0.1:{ports['whatsapp']}"
     node = shutil.which("node")
     if not node:
         raise RuntimeError("Node.js is required")
@@ -82,7 +83,7 @@ def main():
                 MANIFEST.write_text(json.dumps(manifest, indent=2))
                 for item in manifest:
                     print(f"{item['name']}: {item['url']}")
-                print("Moderator access token is stored locally in data/.admin-token (unless ADMIN_API_TOKEN is configured).")
+                print("Choose Super Admin and use data/.admin-token (unless ADMIN_API_TOKEN is configured). Create staff IDs/passwords in Staff accounts.")
                 return
             time.sleep(1)
         raise RuntimeError("Services did not become ready in time. Check .runtime/*.log")

@@ -75,7 +75,7 @@ jobs:
         run: |
           mkdir -p /tmp/amani-smoke
           python3 -c "import secrets; print(secrets.token_urlsafe(32))" > /tmp/amani-smoke/admin-token
-          python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" > /tmp/amani-smoke/chat-key
+          python3 -c "import base64, secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())" > /tmp/amani-smoke/chat-key
       - name: Build orchestrator image
         run: docker build -t amani-orchestrator:ci apps/orchestrator
       - name: Build url-safety image

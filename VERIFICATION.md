@@ -1,5 +1,17 @@
 # Verification record
 
+## Online support and integration visibility
+
+The current local update has 84 passing backend tests. New coverage verifies authenticated heartbeats, expiry/offline/logout removal, Super Admin availability, selected-person handoff, private assigned staff queues, denial of another staff member's reply/status change, human message routing and restricted setup visibility. Both frontend lint/type checks and production builds passed.
+
+WhatsApp is visible to visitors even while setup is pending. Super Admin's Setup & integrations view separates configured services requiring live verification, missing setup, unfinished features and operational checks that remain unverified. No provider secret is exposed. Availability expires 45 seconds after the last dashboard heartbeat; a green dot is not a guaranteed response time.
+
+## Current local authentication update
+
+The earlier staff-token setup described below is superseded locally by Super Admin token login and staff ID/password accounts. The Super Admin creates accounts, resets passwords, disables access and reviews staff activity; staff cannot access account administration or the audit API. Salted scrypt passwords, hashed one-hour sessions, server-side logout/revocation, sign-in throttling and live-stream revocation checks are implemented.
+
+79 backend tests passed. Moderator lint, type checking and production build passed. Local browser checks passed staff creation, both login modes, API role restrictions, password reset, disable/revocation, audit filtering, logout and three viewport widths. These changes have not been deployed to the hosted applications; the older hosted verification below does not prove the new authentication flow is live.
+
 Implementation environment: Windows, Python 3.11, Node.js, Next.js 15.5.26.
 
 The original PDF and extracted blueprint were inspected. New public conversation storage is separate from the legacy database; existing user data was preserved.
@@ -75,3 +87,12 @@ Live credential verification: the supplied VirusTotal credential returned HTTP 2
 ## Limits
 
 This record is not a penetration test, clinical safety evaluation, legal review, translation certification, load test or production hosting verification. See `PRODUCTION.md` for launch requirements and architecture constraints.
+# Multilingual implementation checkpoint
+
+104 backend, WhatsApp gateway and scanner tests passed. Both production frontend builds, lint and type checks passed. The public/moderator language selector, offline catalogues, RTL layouts, consented reply translation, Super Admin catalogue generation, WhatsApp language preferences and ten additional directory entries are implemented. English/French cover 431 extracted keys; additional languages remain partial, and Ga currently has no offline translated wording. See [language coverage and completion instructions](docs/LANGUAGES-AND-SUPPORT.md).
+
+`scripts/browser_language_check.py` passed 24 choices, Twi/Arabic navigation, Arabic layouts at 390/768/1440 px, French directory search, original transcript preservation, consent-gated mocked reply translation and multilingual moderator sign-in. `scripts/browser_presence_check.py` passed chosen-person routing, staff/Admin presence, human replies, offline removal, setup visibility, WhatsApp pending status and responsive layouts. These are local checks, not linguistic or production approval.
+
+The broader `scripts/browser_check.py` also passed eight screen sizes, three feature views, chat, live moderator reply, directory search, URL checking, deletion, French UI/support and absence of browser page errors. Final read-only checks returned HTTP 200 for both frontends, 20 directory entries and 431/431 French catalogue coverage. Configured credentials were not found in tracked or unignored source files.
+
+The configured AI provider returned `credit_balance_exhausted`; real multilingual model output and full catalogue completion remain blocked by provider credit. New referral website evidence is present, but service contact details remain unverified. Meta delivery still needs live configuration and verification.

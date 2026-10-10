@@ -4,6 +4,9 @@ import os
 import re
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
+from browser_safety import install_secret_redaction
+install_secret_redaction()
+expect.set_options(timeout=20000)
 
 ROOT = Path(__file__).resolve().parents[1]
 services = {item["name"]: item["url"] for item in json.loads((ROOT / ".runtime/services.json").read_text())}
@@ -29,6 +32,7 @@ with sync_playwright() as playwright:
     expect(page.locator(".message.assistant")).to_have_count(1, timeout=40000)
     expect(page.get_by_text("Directory response", exact=True)).to_be_visible()
     page.get_by_role("button", name="Request human support", exact=True).click()
+    page.get_by_role("button", name="Join general queue", exact=True).click()
     expect(page.locator(".case-status")).to_be_visible()
     case_id = re.search(r'A-[A-F0-9]+', page.locator('.case-status').inner_text()).group(0)
     page.screenshot(path=str(artifacts / "conversation.png"), full_page=True)
@@ -36,7 +40,8 @@ with sync_playwright() as playwright:
     moderator = browser.new_page(viewport={"width": 1440, "height": 1000})
     moderator.goto(services["moderator"])
     token = os.getenv("ADMIN_API_TOKEN") or (ROOT / "data/.admin-token").read_text().strip()
-    moderator.get_by_label("Access token").fill(token)
+    moderator.get_by_label("Sign in as").select_option("super_admin")
+    moderator.get_by_label("Super Admin token").fill(token)
     moderator.get_by_role("button", name="Sign in", exact=True).click()
     expect(moderator.get_by_role("heading", name="Support operations")).to_be_visible()
     moderator.locator(".case").filter(has_text=case_id).click()

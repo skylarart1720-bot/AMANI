@@ -58,6 +58,9 @@ with connect() as db:
     CREATE TABLE IF NOT EXISTS inbox (id TEXT PRIMARY KEY, payload TEXT, status TEXT DEFAULT 'queued', attempts INTEGER DEFAULT 0, available REAL, created REAL);
     CREATE TABLE IF NOT EXISTS senders (id TEXT PRIMARY KEY, token TEXT, consent INTEGER DEFAULT 0, created REAL);
     """)
+    db.execute("BEGIN IMMEDIATE")
+    if "language" not in {row["name"] for row in db.execute("PRAGMA table_info(senders)")}:
+        db.execute("ALTER TABLE senders ADD COLUMN language TEXT NOT NULL DEFAULT 'en'")
 
 async def deliver(number, message):
     async with httpx.AsyncClient(timeout=15) as client:
@@ -82,12 +85,26 @@ async def process(row):
             response.raise_for_status()
             token = response.json()["token"]
             with connect() as db:
-                db.execute("INSERT INTO senders VALUES(?,?,?,?)", (sender, encryption.encrypt(token.encode()).decode(), 0, time.time()))
+                db.execute("INSERT INTO senders(id,token,consent,created,language) VALUES(?,?,?,?,?)", (sender, encryption.encrypt(token.encode()).decode(), 0, time.time(), "en"))
         else:
             token = encryption.decrypt(record["token"].encode()).decode()
         headers = {"Authorization": "Bearer " + token}
         command = message.strip().lower()
-        if command in ("forget", "delete my chat", "delete", "forget this conversation"):
+        language = record["language"] if record else "en"
+        if command in ("languages", "language", "lang") or command.startswith(("language ", "lang ")):
+            response = await client.get(ORCHESTRATOR_URL + "/support/languages")
+            response.raise_for_status()
+            options = response.json()["languages"]
+            code = command.split(maxsplit=1)[1] if " " in command else None
+            selected = next((item for item in options if item["code"].lower() == code), None)
+            if selected:
+                language = selected["code"]
+                with connect() as db:
+                    db.execute("UPDATE senders SET language=? WHERE id=?", (language, sender))
+                answer = "Language: " + selected["native"] + ". New replies will use this language."
+            else:
+                answer = "Send language followed by a code, for example language ak or language fr.\n" + "\n".join(item["code"] + " — " + item["native"] for item in options)
+        elif command in ("forget", "delete my chat", "delete", "forget this conversation"):
             response = await client.delete(ORCHESTRATOR_URL + "/support/sessions", headers=headers)
             if response.status_code not in (200, 401):
                 response.raise_for_status()
@@ -112,7 +129,7 @@ async def process(row):
             replies = [m["content"] for m in response.json()["messages"] if m["role"] == "human"]
             answer = "\n\n".join(replies[-3:]) if replies else "No human reply is available yet. For immediate danger in Ghana call 112."
         else:
-            response = await client.post(ORCHESTRATOR_URL + "/support/chat", headers=headers, json={"message": message[:4000], "ai_consent": bool(record and record["consent"])})
+            response = await client.post(ORCHESTRATOR_URL + "/support/chat", headers=headers, json={"message": message[:4000], "ai_consent": bool(record and record["consent"]), "language": language})
             if response.status_code == 401:
                 with connect() as db:
                     db.execute("DELETE FROM senders WHERE id=?", (sender,))
@@ -124,7 +141,8 @@ async def process(row):
         if is_new:
             answer = ("Welcome to AMANI. I am an AI-enabled information assistant, not an emergency service. "
                       "Meta can see your number; Amani stores an encrypted delivery record briefly. Conversations expire after 7 days. "
-                      "Send 'forget' to delete, 'human' to request a moderator, or 'enable ai' to consent to sharing recent messages with the AI provider.\n\n" + answer)
+                      "Send 'forget' to delete, 'human' to request a moderator, or 'enable ai' to consent to sharing recent messages with the AI provider. "
+                      "Send 'languages' to choose the language for new replies.\n\n" + answer)
         payload["answer"] = answer
         with connect() as db:
             db.execute("UPDATE inbox SET payload=? WHERE id=?", (encryption.encrypt(json.dumps(payload).encode()).decode(), row["id"]))

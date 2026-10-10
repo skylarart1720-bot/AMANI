@@ -97,6 +97,7 @@ header > div {
 }
 nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding-bottom: 20px;
   border-bottom: 1px solid #dde5dd;
@@ -327,6 +328,12 @@ th {
 .login .muted {
   text-align: center;
 }
+.presence-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #9ca3af; flex-shrink: 0; }
+.presence-dot.online { background: #16a34a; box-shadow: 0 0 0 3px #16a34a19; }
+.availability { display: flex; align-items: center; gap: 8px; }
+.setup-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 18px; }
+.setup-card { border: 1px solid #ddd; border-radius: 12px; padding: 20px; overflow-wrap: anywhere; }
+.setup-card strong { color: #9a5b08; font-size: 13px; }
 @media (max-width: 800px) {
   .workspace {
     padding: 20px;
@@ -349,11 +356,16 @@ th {
 @media (max-width: 600px) {
   header {
     padding: 15px 18px;
+    flex-wrap: wrap;
+    gap: 10px;
   }
   header > div {
     align-items: flex-start;
     flex-direction: column;
     gap: 0;
+    flex-basis: 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .workspace {
     padding: 18px;
@@ -377,6 +389,7 @@ th {
   }
   .heading {
     align-items: flex-start;
+    flex-wrap: wrap;
   }
   .heading select {
     max-width: 135px;
@@ -399,3 +412,13 @@ th {
     font-size: 22px;
   }
 }
+/* Language controls use native-script names and keyboard-visible focus. */
+.language-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13px; }
+.language-picker select { width: auto; max-width: 170px; min-height: 40px; }
+.login .language-picker { margin-bottom: 18px; }
+.language-note { background: #f3f7ef; color: #38533e; border: 1px solid #d1dfcd; padding: 14px 18px; border-radius: 10px; font-size: 13px; }
+.language-workbench { margin-top: 20px; }
+[dir="rtl"] .message { text-align: right; }
+[dir="rtl"] input[type="password"], [dir="rtl"] input[type="url"] { direction: ltr; }
+:focus-visible { outline: 3px solid #278148; outline-offset: 3px; }
+@media (max-width: 600px) { header .language-picker { width: 100%; } .language-picker select { flex: 1; max-width: 220px; } }

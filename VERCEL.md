@@ -14,7 +14,7 @@ Recorded so an operator does not have to reconstruct them from project history. 
 
 The backend origin is deliberately left blank rather than guessed. Copy it from the orchestrator's public domain in the Railway networking settings, without a trailing slash, and paste it into `ORCHESTRATOR_URL` for both Vercel projects. A Railway dashboard link is a control panel, not an API origin. Until it is recorded here, nobody can confirm which backend the frontends are talking to.
 
-As of 9 October 2026 both frontends answer on HTTPS and the public site reports a connected support service with AI and the link scanner configured. Moderator access still uses the shared token described in section 3.
+As of 9 October 2026 both frontends answer on HTTPS. Configuration flags indicate available settings, not successful provider requests. This update adds separate Staff and Super Admin sign-in as described in section 3; verify both backend and frontend deployments before using it.
 
 ## 1. Deploy the backend first
 
@@ -27,8 +27,8 @@ Configure the orchestrator's environment:
 | `APP_ENV` | `production` |
 | `PROJECT_ROOT` | `/app` for the supplied Dockerfile |
 | `AMANI_DATA_DIR` | `/data`, with a persistent disk mounted there |
-| `ADMIN_API_TOKEN` | A new random token, generated below |
-| `CHAT_ENCRYPTION_KEY` | A new Fernet key, generated below; keep it stable |
+| `ADMIN_API_TOKEN` | Preserve the existing Railway token; generate only for a first installation |
+| `CHAT_ENCRYPTION_KEY` | Preserve the existing encryption key; generate only for a first installation |
 | `URL_SAFETY_URL` | Scanner's private service origin, including port if needed; no trailing slash |
 | `OPENAI_API_KEY` | Your funded provider key, if demonstrating AI |
 | `OPENAI_MODEL` | Your provider's supported model |
@@ -36,7 +36,7 @@ Configure the orchestrator's environment:
 
 Configure `APP_ENV=production` and `VIRUSTOTAL_API_KEY` and/or `SAFE_BROWSING_API_KEY` on the scanner. Keep the scanner private. Publish the orchestrator through an HTTPS endpoint reachable by Vercel, with firewall/reverse-proxy controls appropriate to the host. Do not expose databases, server folders or the scanner. Moderator endpoints already require the moderator bearer token.
 
-Generate new backend secrets locally, separately, using the installed Python environment:
+For an existing Railway deployment, keep its current `ADMIN_API_TOKEN` and `CHAT_ENCRYPTION_KEY` unchanged when deploying this update. Super Admin login validates against that existing Railway token. A Git push does not copy the local `.env` or replace Railway variables. Generate secrets below only for a first installation:
 
 ```powershell
 .\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(32))"
@@ -66,13 +66,13 @@ Set environment variables for the deployment environment you use (Production and
 
 ## 3. Sign in to the moderator dashboard
 
-Open the moderator project's URL. Paste the new backend `ADMIN_API_TOKEN` into **Access token** and click **Sign in**. No username is currently required. The dashboard validates the token against the backend and sets a one-hour HTTP-only, secure, same-site cookie. Logout removes that browser's cookie. Rotating the backend token revokes existing access after the backend reloads the new value.
+After deploying the updated backend and moderator frontend, open the moderator URL, choose **Super Admin**, enter the backend `ADMIN_API_TOKEN` and sign in. Open **Staff accounts** and create each staff ID/password. Staff choose **Staff** on the login and use their own credentials. Cookies are HTTP-only, secure and same-site, with one-hour expiry. Staff logout, password reset and disabling revoke backend sessions; rotating the admin token revokes administrator access after the backend reloads it. Keep the existing production encryption key stable.
 
-Do not reuse the local development token that was shared in the conversation. Do not add the admin token to the public website, Vercel configuration files or GitHub. The dashboard does not need an `ADMIN_API_TOKEN` environment variable; it forwards the operator's submitted token server-side.
+Use the existing Railway admin token for this deployment. Keep it out of the public website, Vercel configuration files and GitHub. The dashboard does not need an `ADMIN_API_TOKEN` environment variable; it forwards the operator's submitted token server-side.
 
 For a controlled demo with one operator, use this token plus restricted dashboard access. Use Vercel deployment protection for reviewer access and verify protection on the exact URL you share. This protection is separate from AMANI's moderator login. Do not give funders moderator access unless they need to operate the system; use a guided demonstration otherwise.
 
-Before multiple staff use this with real support data, replace the shared token with individual accounts, MFA, roles, revocation and per-person audit records. Those identity features are not implemented by the current token login.
+Staff accounts, two roles, session revocation and per-person audit records are implemented. MFA and organisation isolation still require work. The earlier `STAFF_ACCOUNT_TOKENS` configuration is no longer used; account records live on the persistent backend disk.
 
 ## 4. Verify the hosted demo
 

@@ -1,0 +1,194 @@
+[
+  {
+    "code": "en",
+    "native": "English",
+    "name": "English",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  },
+  {
+    "code": "fr",
+    "native": "Français",
+    "name": "French",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  },
+  {
+    "code": "ak",
+    "native": "Twi / Akan",
+    "name": "Akan (Twi)",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "developing"
+  },
+  {
+    "code": "ee",
+    "native": "Eʋegbe",
+    "name": "Ewe",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "developing"
+  },
+  {
+    "code": "gaa",
+    "native": "Gã",
+    "name": "Ga",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "developing"
+  },
+  {
+    "code": "ha",
+    "native": "Hausa",
+    "name": "Hausa",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  },
+  {
+    "code": "yo",
+    "native": "Yorùbá",
+    "name": "Yoruba",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  },
+  {
+    "code": "ig",
+    "native": "Igbo",
+    "name": "Igbo",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  },
+  {
+    "code": "sw",
+    "native": "Kiswahili",
+    "name": "Swahili",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  },
+  {
+    "code": "zu",
+    "native": "isiZulu",
+    "name": "Zulu",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  },
+  {
+    "code": "am",
+    "native": "አማርኛ",
+    "name": "Amharic",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  },
+  {
+    "code": "so",
+    "native": "Soomaali",
+    "name": "Somali",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  },
+  {
+    "code": "ar",
+    "native": "العربية",
+    "name": "Arabic",
+    "direction": "rtl",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  },
+  {
+    "code": "es",
+    "native": "Español",
+    "name": "Spanish",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  },
+  {
+    "code": "pt",
+    "native": "Português",
+    "name": "Portuguese",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  },
+  {
+    "code": "de",
+    "native": "Deutsch",
+    "name": "German",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  },
+  {
+    "code": "it",
+    "native": "Italiano",
+    "name": "Italian",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  },
+  {
+    "code": "hi",
+    "native": "हिन्दी",
+    "name": "Hindi",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  },
+  {
+    "code": "zh-CN",
+    "native": "简体中文",
+    "name": "Simplified Chinese",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  },
+  {
+    "code": "ru",
+    "native": "Русский",
+    "name": "Russian",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  },
+  {
+    "code": "uk",
+    "native": "Українська",
+    "name": "Ukrainian",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  },
+  {
+    "code": "bn",
+    "native": "বাংলা",
+    "name": "Bengali",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  },
+  {
+    "code": "tr",
+    "native": "Türkçe",
+    "name": "Turkish",
+    "direction": "ltr",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  },
+  {
+    "code": "ur",
+    "native": "اردو",
+    "name": "Urdu",
+    "direction": "rtl",
+    "review": "Native-speaker review pending",
+    "coverage": "general"
+  }
+]

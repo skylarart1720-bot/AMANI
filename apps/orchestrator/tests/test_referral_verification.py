@@ -76,7 +76,8 @@ def test_coarse_region_filter_never_requires_a_precise_location():
 
 def test_directory_filters_by_topic():
     cyber = client.get("/support/directory", params={"category": "digital-rights"}).json()["referrals"]
-    assert [r["category"] for r in cyber] == ["digital-rights"]
+    assert cyber and all(r["category"] == "digital-rights" for r in cyber)
+    assert {"digital-rights", "access-now-helpline", "rsf-digital", "nca-complaints"} <= {r["id"] for r in cyber}
     assert client.get("/support/directory", params={"category": "not-a-topic"}).json()["referrals"] == []
 
 def test_saving_keeps_region_and_regions_consistent():
@@ -112,4 +113,4 @@ def test_directory_edits_are_audited_with_the_record_identifier():
     save(id="audited-contact", region="Ghana", regions=["Ghana"])
     response = client.get("/admin/audit", headers=admin, params={"action": "directory.updated"})
     assert response.status_code == 200
-    assert any(e["resource"] == "audited-contact" and e["actor"] == support.SHARED_ACTOR for e in response.json()["entries"])
+    assert any(e["resource"] == "audited-contact" and e["actor"] == "super-admin" for e in response.json()["entries"])

@@ -1,10 +1,12 @@
 "use client";
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import {Language, languageOptions, localize, useLanguage} from "./localization";
 
 type Case = {
   id: string;
   priority: string;
   status: string;
+  assignee: string | null;
   created: number;
   messages: { id: number; role: string; content: string }[];
 };
@@ -46,6 +48,8 @@ type AuditEntry = {
   detail: string | null;
   created: number;
 };
+type StaffAccount = { id: string; active: boolean | number; online: boolean; created: number };
+type SetupItem = {name: string; status: string; next: string; missing_api_settings?: string[]};
 const blank: Entry = {
   title: "",
   summary: "",
@@ -88,8 +92,21 @@ const blankReferral: Referral = {
 };
 
 export default function Dashboard() {
+  const {language, setLanguage, coverage, refreshTranslations} = useLanguage();
   const [authenticated, setAuthenticated] = useState(false);
   const [token, setToken] = useState("");
+  const [loginMode, setLoginMode] = useState<"staff" | "super_admin">("staff");
+  const [staffId, setStaffId] = useState("");
+  const [password, setPassword] = useState("");
+  const [identity, setIdentity] = useState<{actor: string; role: string} | null>(null);
+  const [available, setAvailable] = useState(true);
+  const [presenceOnline, setPresenceOnline] = useState(false);
+  const [setupItems, setSetupItems] = useState<SetupItem[]>([]);
+  const [staff, setStaff] = useState<StaffAccount[]>([]);
+  const [newStaffId, setNewStaffId] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [resetId, setResetId] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
   const [tab, setTab] = useState("queue");
   const [cases, setCases] = useState<Case[]>([]);
   const [directory, setDirectory] = useState<Referral[]>([]);
@@ -126,14 +143,16 @@ export default function Dashboard() {
     [],
   );
   const refresh = useCallback(async () => {
-    const [queue, refs, knowledge] = await Promise.all([
+    const [queue, refs, knowledge, me] = await Promise.all([
       api("admin/queue"),
       api("admin/directory"),
       api("admin/knowledge"),
+      api("admin/me"),
     ]);
     setCases(queue);
     setDirectory(refs);
     setEntries(knowledge);
+    setIdentity(me);
     setLastUpdated(new Date().toLocaleTimeString());
     setAuthenticated(true);
   }, [api]);
@@ -150,6 +169,15 @@ export default function Dashboard() {
   useEffect(() => {
     void refresh().catch(() => {});
   }, [refresh]);
+  useEffect(() => {
+    if (!authenticated) return;
+    const heartbeat = () => {
+      void api("admin/presence", "POST", {available}).then((result) => setPresenceOnline(result.online)).catch(() => setPresenceOnline(false));
+    };
+    heartbeat();
+    const timer = setInterval(heartbeat, 15000);
+    return () => clearInterval(timer);
+  }, [authenticated, available, api]);
   useEffect(() => {
     if (!authenticated) return;
     const events = new EventSource("/api/admin/events");
@@ -177,24 +205,49 @@ export default function Dashboard() {
       setBusy(false);
     }
   };
+  useEffect(() => {
+    if (!authenticated || tab !== "staff" || identity?.role !== "super_admin") return;
+    const timer = setInterval(() => {
+      void api("admin/staff").then(setStaff).catch((e) => setError(e.message));
+    }, 10000);
+    return () => clearInterval(timer);
+  }, [authenticated, tab, identity?.role, api]);
   const login = (e: FormEvent) => {
     e.preventDefault();
     void perform(async () => {
-      await api("login", "POST", { token });
+      await api("login", "POST", { mode: loginMode, token, staff_id: staffId, password });
       setToken("");
+      setPassword("");
+      setTab("queue");
+      setAvailable(true);
       await refresh();
     });
   };
   const active = cases.find((c) => c.id === selected);
+  const languagePicker = <label className="language-picker">Language<select aria-label="Language" value={language} onChange={(e) => setLanguage(e.target.value as Language)}>{languageOptions.map((item) => <option key={item.code} value={item.code} data-original-text>{item.native}</option>)}</select></label>;
   if (!authenticated)
-    return (
+    return localize(
       <main className="login">
         <section>
           <span className="wordmark">AMANI</span>
           <h1>Moderator sign in</h1>
+          {languagePicker}
+          {language !== "en" && coverage.status !== "complete" && <p className="muted" role="status">Some text remains in English. Full translation is unavailable right now.</p>}
           <form onSubmit={login}>
-            <label>
-              Access token
+            <label>Sign in as
+              <select value={loginMode} onChange={(e) => {
+                setLoginMode(e.target.value as "staff" | "super_admin");
+                setToken(""); setPassword(""); setError("");
+              }}>
+                <option value="staff">Staff</option>
+                <option value="super_admin">Super Admin</option>
+              </select>
+            </label>
+            {loginMode === "staff" ? <>
+              <label>Staff ID<input autoComplete="username" value={staffId} onChange={(e) => setStaffId(e.target.value)} required maxLength={60} /></label>
+              <label>Password<input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required maxLength={128} /></label>
+            </> : <label>
+              Super Admin token
               <input
                 type="password"
                 autoComplete="current-password"
@@ -202,7 +255,7 @@ export default function Dashboard() {
                 onChange={(e) => setToken(e.target.value)}
                 required
               />
-            </label>
+            </label>}
             {error && (
               <p className="error" role="alert">
                 {error}
@@ -215,20 +268,25 @@ export default function Dashboard() {
           <p className="muted">Authorised support staff only.</p>
         </section>
       </main>
-    );
-  return (
+    , language);
+  return localize(
     <div>
       <header>
+        {languagePicker}
         <div>
           <span className="wordmark">AMANI</span>
-          <span className="muted">Moderator workspace</span>
+          <span className="muted">{identity?.role === "super_admin" ? "Super Admin" : "Staff"} · {identity?.actor}</span>
         </div>
+        <button className="availability" aria-pressed={available} onClick={() => setAvailable(!available)}>
+          <span className={`presence-dot ${presenceOnline ? "online" : ""}`} /> {presenceOnline ? "Online" : "Offline"}
+        </button>
         <button
           onClick={() =>
             void perform(async () => {
               await api("logout", "POST");
               setAuthenticated(false);
               setCases([]);
+              setIdentity(null); setStaff([]); setAudit([]); setTab("queue");
             })
           }
         >
@@ -236,6 +294,7 @@ export default function Dashboard() {
         </button>
       </header>
       <main className="workspace">
+        {language !== "en" && coverage.status !== "complete" && <p className="language-note" role="status">Some text remains in English. Full translation is unavailable right now.</p>}
         <div className="heading">
           <div>
             <h1>Support operations</h1>
@@ -246,7 +305,7 @@ export default function Dashboard() {
           </button>
         </div>
         <nav aria-label="Moderator views">
-          {["queue", "directory", "knowledge", "audit"].map((t) => (
+          {["queue", "directory", "knowledge", ...(identity?.role === "super_admin" ? ["staff", "audit", "setup"] : [])].map((t) => (
             <button
               key={t}
               className={t === tab ? "active" : ""}
@@ -255,6 +314,8 @@ export default function Dashboard() {
                 setError("");
                 setNotice("");
                 if (t === "audit") void loadAudit(auditActor).catch((e) => setError(e.message));
+                if (t === "staff") void api("admin/staff").then(setStaff).catch((e) => setError(e.message));
+                if (t === "setup") void api("admin/setup").then((data) => setSetupItems(data.items)).catch((e) => setError(e.message));
               }}
             >
               {t === "queue"
@@ -263,7 +324,7 @@ export default function Dashboard() {
                   ? "Referral directory"
                   : t === "knowledge"
                     ? "Knowledge review"
-                    : "Audit log"}
+                    : t === "staff" ? "Staff accounts" : t === "setup" ? "Setup & integrations" : "Audit log"}
             </button>
           ))}
         </nav>
@@ -277,6 +338,50 @@ export default function Dashboard() {
             {notice}
           </p>
         )}
+        {tab === "setup" && identity?.role === "super_admin" && <>
+          <div className="heading"><div><h2>Setup & integrations</h2><p className="muted">Configured services, unfinished features and the work needed to finalize AMANI.</p></div><button disabled={busy} onClick={() => void perform(async () => setSetupItems((await api("admin/setup")).items))}>Check configuration</button></div>
+          <div className="setup-grid">{setupItems.map((item) => <section className="setup-card" key={item.name}><h3>{item.name}</h3><strong>{item.status}</strong><p>{item.next}</p>{item.missing_api_settings?.length ? <small>Missing API settings: {item.missing_api_settings.join(", ")}</small> : null}</section>)}</div>
+          <section className="setup-card language-workbench"><h3>Translation catalogues</h3><p>Complete the selected language with the configured AI provider. Only public interface wording is sent. AI credits are required; native-speaker review is still needed.</p><p>{coverage.translated} / {coverage.total} · <span data-original-text>{languageOptions.find((item) => item.code === language)?.native}</span></p><div className="actions"><button onClick={refreshTranslations}>Refresh translations</button><button className="primary" disabled={busy || language === "en" || coverage.status === "generating"} onClick={() => void perform(async () => { await api(`admin/languages/${language}`, "POST", {}); refreshTranslations(); setNotice("Preparing translations…"); })}>Complete selected language</button></div></section>
+        </>}
+        {tab === "staff" && identity?.role === "super_admin" && <>
+          <h2>Staff accounts</h2>
+          <p className="muted">Create an ID and password for each staff member. Their work appears under that ID in the audit log.</p>
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            void perform(async () => {
+              await api("admin/staff", "POST", {staff_id: newStaffId, password: newPassword});
+              setNewStaffId(""); setNewPassword("");
+              setStaff(await api("admin/staff")); setNotice("Staff account created. Share the ID and password privately with that person.");
+            });
+          }}>
+            <div className="form-grid">
+              <label>New staff ID<input value={newStaffId} onChange={(e) => setNewStaffId(e.target.value)} required minLength={2} maxLength={60} pattern="[A-Za-z0-9._@-]+" autoComplete="off" /></label>
+              <label>Password<input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={12} maxLength={128} autoComplete="new-password" /><small>At least 12 characters.</small></label>
+            </div>
+            <button className="primary" disabled={busy}>Create staff</button>
+          </form>
+          {resetId && <form onSubmit={(e) => {
+            e.preventDefault();
+            void perform(async () => {
+              await api(`admin/staff/${encodeURIComponent(resetId)}`, "PATCH", {password: resetPassword});
+              setResetId(""); setResetPassword(""); setNotice("Password reset. Existing sessions have been revoked.");
+            });
+          }}>
+            <label>New password for {resetId}<input type="password" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} required minLength={12} maxLength={128} autoComplete="new-password" /></label>
+            <div className="actions"><button type="button" onClick={() => {setResetId(""); setResetPassword("");}}>Cancel</button><button className="primary" disabled={busy}>Reset password</button></div>
+          </form>}
+          <div className="table-wrap"><table><thead><tr><th>Staff ID</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+            {staff.map((account) => <tr key={account.id}><td>{account.id}</td><td>{account.active ? <><span className={`presence-dot ${account.online ? "online" : ""}`} /> {account.online ? "Online" : "Offline"}</> : "Disabled"}</td><td><div className="actions">
+              <button disabled={busy} onClick={() => {setResetId(account.id); setResetPassword("");}}>Reset password</button>
+              <button disabled={busy} onClick={() => void perform(async () => {
+                await api(`admin/staff/${encodeURIComponent(account.id)}`, "PATCH", {active: !account.active});
+                setStaff(await api("admin/staff")); setNotice(account.active ? "Account disabled and sessions revoked." : "Account enabled.");
+              })}>{account.active ? "Disable" : "Enable"}</button>
+              <button onClick={() => {setAuditActor(account.id); setTab("audit"); void loadAudit(account.id).catch((e) => setError(e.message));}}>View activity</button>
+            </div></td></tr>)}
+          </tbody></table></div>
+          {staff.length === 0 && <p>No staff accounts yet. Create your first account above.</p>}
+        </>}
         {tab === "queue" && (
           <>
             <div className="stats">
@@ -339,6 +444,7 @@ export default function Dashboard() {
                         </span>
                         <strong>{c.id}</strong>
                         <span>{c.status.replace("_", " ")}</span>
+                        <small>{c.assignee ? `Assigned to ${c.assignee}` : "General queue"}</small>
                         <small>
                           {new Date(c.created * 1000).toLocaleString()}
                         </small>
@@ -382,7 +488,7 @@ export default function Dashboard() {
                                 ? "Visitor"
                                 : "Amani"}
                           </strong>
-                          <p>{m.content}</p>
+                          <p data-original-text dir="auto">{m.content}</p>
                         </article>
                       ))}
                     </div>
@@ -639,7 +745,7 @@ export default function Dashboard() {
                 <tbody>
                   {directory.map((r) => (
                     <tr key={r.id}>
-                      <td>{r.organisation}</td>
+                      <td data-original-text>{r.organisation}</td>
                       <td>{r.category}</td>
                       <td>{r.regions.join(", ")}</td>
                       <td>
@@ -856,5 +962,5 @@ export default function Dashboard() {
         )}
       </main>
     </div>
-  );
+  , language);
 }

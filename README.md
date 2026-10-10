@@ -22,9 +22,11 @@ The launcher prints the actual URLs, selecting a free port when necessary. Its d
 
 These addresses work on this computer. They are not public internet deployments. Services run in the background without opening terminal windows. Logs and process details are in `.runtime/`.
 
-The moderator login accepts the value of `ADMIN_API_TOKEN` when configured. Otherwise the local development token is in **`data/.admin-token`**. Open that file and enter its value in the moderator sign-in form. Do not publish this token or the encryption key.
+Choose **Super Admin** on the moderator login and enter `ADMIN_API_TOKEN`, or the local development token in **`data/.admin-token`** when no token is configured. Open **Staff accounts** to create each staff ID and password. Staff choose **Staff** and sign in with those credentials. Do not publish the admin token or encryption key.
 
-To attribute each moderator action to a named person, set `STAFF_ACCOUNT_TOKENS` on the API to a JSON object of staff id to bearer token, for example `{"ada":"<token>","kofi":"<token>"}`. Each staff member then signs in with their own token, every audit row records their staff id, and removing an id revokes that person's access at the next restart. Individual accounts, MFA and role separation are not part of this interface yet. With `STAFF_ACCOUNT_TOKENS` unset, every action is recorded as `shared-token`, which is honest but not per-person attributable.
+Staff accounts are stored in the persistent support database with salted scrypt password hashes. IDs are case-insensitive and stored lowercase. Staff sessions expire after one hour; logout, password reset and account disabling revoke sessions. Only the Super Admin can manage staff and inspect the audit trail. Staff can operate the support queue, directory and knowledge workflow; their actions are recorded under their own IDs. MFA is not implemented.
+
+Create `AM001` and `AM002` in **Staff accounts** with passwords you choose. Earlier staff token files and `STAFF_ACCOUNT_TOKENS` are no longer used. See [docs/DEPLOYMENT-CHECKPOINT.md](docs/DEPLOYMENT-CHECKPOINT.md) for deployment instructions.
 
 To stop the managed processes:
 
@@ -55,7 +57,7 @@ Check external connectivity without printing secrets:
 
 ## Implemented flows
 
-- English/French public interface, French automated support replies and bilingual topic/urgency routing.
+- Language selectors in the public app and moderator dashboard, 24 registered language choices, English/French offline catalogues, draft wording for additional languages, RTL layouts and multilingual AI instructions. See [actual coverage and completion steps](docs/LANGUAGES-AND-SUPPORT.md); additional full catalogues and native-speaker review remain pending.
 - Anonymous capability sessions with encrypted conversation storage, seven-day expiry, deletion, quick exit and explicit AI consent.
 - Nine support topics, searchable referral directory, official source links and honest contact-verification status.
 - Referral records that state their real coverage areas, contact channels, languages and trust tier, with a `verified`, `stale` or `unverified` label derived from the check and review dates. A listing is never presented as a partnership.
@@ -63,7 +65,10 @@ Check external connectivity without printing secrets:
 - AI integration with conversation context, editorially published knowledge and referral grounding; immediate rule-based crisis routing before model generation.
 - Server-sent events for live visitor and moderator updates, with polling/reconnection fallback.
 - Human-support queue, priority cases, moderator replies and case status changes.
-- Attributable staff audit trail: per-staff tokens, actor/action/record/outcome/time for transcript reads, replies and every content edit, failed access recorded, 90-day retention, and no route that edits or deletes an entry.
+- Super Admin token login, staff ID/password accounts, account creation, password reset, disabling, session revocation and role enforcement.
+- Online staff and Super Admin picker at the top of web support, green presence indicators, selected-person handoff, private assigned staff queues and a general-queue fallback. Dashboard heartbeats refresh every 15 seconds; availability expires after 45 seconds without a heartbeat. Operators can switch Online/Offline.
+- Visible WhatsApp channel page and clickable chat action when the public business number is configured; automation status is shown separately. Super Admin's Setup & integrations view lists missing setup, unfinished features and verification work.
+- Attributable staff audit trail: actor/action/record/outcome/time for transcript reads, replies and content edits, failed access recorded, 90-day retention, and no route that edits or deletes an entry.
 - Authenticated moderator workspace with HTTP-only cookies, editable referral contacts, a knowledge publication/withdrawal workflow and an audit log view.
 - Bounded request bodies on every method, checked from the declared length before anything is buffered and capped again while receiving.
 - Google Safe Browsing and VirusTotal lookups, consent before URL sharing, bounded timeouts and conservative failure handling. The scanner never visits the submitted address.

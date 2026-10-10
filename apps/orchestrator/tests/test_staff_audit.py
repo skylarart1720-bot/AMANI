@@ -24,28 +24,36 @@ def entries(headers=None, **filters):
 def session():
     return {"Authorization": "Bearer " + client.post("/support/sessions").json()["token"]}
 
-def test_named_staff_tokens_attribute_each_action(monkeypatch):
-    monkeypatch.setattr(support, "STAFF_ACCOUNTS", {"ada": "a" * 40, "kofi": "b" * 40})
+def test_named_staff_passwords_attribute_each_action():
+    for actor in ("ada", "kofi"):
+        assert client.post("/admin/staff", headers=admin, json={"staff_id": actor, "password": "test-password-long-enough"}).status_code == 200
+    def staff_headers(actor):
+        result = client.post("/auth/login", json={"mode": "staff", "staff_id": actor, "password": "test-password-long-enough"}).json()
+        return {"Authorization": "Bearer " + result["token"]}
+    ADA, KOFI = staff_headers("ada"), staff_headers("kofi")
     payload = {"title": "Attribution source", "summary": "Reviewed text long enough for the knowledge model.", "category": "climate", "source": "Source", "source_url": "https://example.org/a", "verified_at": "2026-09-26"}
     ada_entry = client.post("/admin/knowledge", headers=ADA, json=payload).json()
     kofi_entry = client.post("/admin/knowledge", headers=KOFI, json=payload).json()
     client.patch(f"/admin/knowledge/{ada_entry['id']}", headers=ADA, json={"status": "published"})
     client.patch(f"/admin/knowledge/{kofi_entry['id']}", headers=KOFI, json={"status": "rejected"})
-    assert any(e["actor"] == "ada" and e["resource"] == ada_entry["id"] and e["action"] == "knowledge.published" for e in entries(headers=ADA))
-    assert any(e["actor"] == "kofi" and e["resource"] == kofi_entry["id"] and e["action"] == "knowledge.rejected" for e in entries(headers=KOFI))
-    assert not any(e["actor"] == "kofi" and e["action"] == "knowledge.published" for e in entries(headers=KOFI))
+    assert any(e["actor"] == "ada" and e["resource"] == ada_entry["id"] and e["action"] == "knowledge.published" for e in entries())
+    assert any(e["actor"] == "kofi" and e["resource"] == kofi_entry["id"] and e["action"] == "knowledge.rejected" for e in entries())
+    assert not any(e["actor"] == "kofi" and e["action"] == "knowledge.published" for e in entries())
+    assert client.get("/admin/audit", headers=ADA).status_code == 403
 
-def test_shared_token_is_recorded_as_shared_not_as_a_person():
+def test_admin_token_is_recorded_as_super_admin():
     client.get("/admin/queue", headers=admin)
     actors = {e["actor"] for e in entries(action="queue.viewed")}
-    assert support.SHARED_ACTOR in actors
+    assert "super-admin" in actors
     assert "anonymous" not in actors
 
-def test_revoked_named_token_loses_access(monkeypatch):
-    monkeypatch.setattr(support, "STAFF_ACCOUNTS", {"ada": "a" * 40})
-    assert client.get("/admin/queue", headers=ADA).status_code == 200
-    monkeypatch.setattr(support, "STAFF_ACCOUNTS", {})
-    assert client.get("/admin/queue", headers=ADA).status_code == 401
+def test_disabled_staff_session_loses_access():
+    client.post("/admin/staff", headers=admin, json={"staff_id": "revoked-staff", "password": "test-password-long-enough"})
+    result = client.post("/auth/login", json={"mode": "staff", "staff_id": "revoked-staff", "password": "test-password-long-enough"}).json()
+    headers = {"Authorization": "Bearer " + result["token"]}
+    assert client.get("/admin/queue", headers=headers).status_code == 200
+    assert client.patch("/admin/staff/revoked-staff", headers=admin, json={"active": False}).status_code == 200
+    assert client.get("/admin/queue", headers=headers).status_code == 401
 
 def test_denied_and_failed_access_are_recorded():
     before = len(entries())
@@ -84,7 +92,7 @@ def test_audit_records_carry_time_and_outcome_and_are_filterable():
     assert all(e["outcome"] == "success" for e in entries(action="directory.viewed"))
     assert all(e["created"] > 0 for e in entries(action="directory.viewed"))
     assert entries(actor="nobody-with-this-name") == []
-    assert all(e["action"] == "knowledge.viewed" for e in entries(actor=support.SHARED_ACTOR, action="knowledge.viewed"))
+    assert all(e["action"] == "knowledge.viewed" for e in entries(actor="super-admin", action="knowledge.viewed"))
 
 def test_staff_cannot_edit_or_delete_audit_entries():
     for method in ("post", "put", "patch", "delete"):

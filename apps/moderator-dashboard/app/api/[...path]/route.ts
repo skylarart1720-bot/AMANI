@@ -9,6 +9,14 @@ async function proxy(
   const path = (await context.params).path.join("/");
   const jar = await cookies();
   const base = process.env.ORCHESTRATOR_URL || "http://127.0.0.1:8000";
+  if (request.method === "GET" && /^support\/languages(?:\/[a-zA-Z-]+)?$/.test(path)) {
+    try {
+      const result = await fetch(`${base}/${path}`, {cache: "no-store", signal: AbortSignal.timeout(10000)});
+      return NextResponse.json(await result.json(), {status: result.status});
+    } catch {
+      return NextResponse.json({detail: "Translations are unavailable."}, {status: 503});
+    }
+  }
   if (request.method !== "GET") {
     const origin = request.headers.get("origin");
     if (origin) {
@@ -28,41 +36,49 @@ async function proxy(
     }
   }
   if (path === "logout") {
+    const token = jar.get("amani-admin")?.value;
+    if (token) {
+      try {
+        await fetch(`${base}/admin/logout`, {
+          method: "POST", headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(10000), cache: "no-store",
+        });
+      } catch {
+        jar.delete("amani-admin");
+        return NextResponse.json({ detail: "Signed out in this browser. The service could not revoke the session; it expires within one hour." }, { status: 503 });
+      }
+    }
     jar.delete("amani-admin");
     return NextResponse.json({ ok: true });
   }
   try {
     if (path === "login" && request.method === "POST") {
       const payload = await request.json();
-      const token = typeof payload.token === "string" ? payload.token.trim() : payload.token;
-      if (typeof token !== "string" || token.length < 20 || token.length > 200)
+      if (!["staff", "super_admin"].includes(payload.mode))
         return NextResponse.json(
-          { detail: "Invalid access token" },
-          { status: 401 },
+          { detail: "Choose Staff or Super Admin." },
+          { status: 422 },
         );
-      const result = await fetch(`${base}/admin/queue`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const result = await fetch(`${base}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: payload.mode, token: payload.token || "", staff_id: payload.staff_id || "", password: payload.password || "" }),
         cache: "no-store",
         signal: AbortSignal.timeout(10000),
       });
-      if (!result.ok)
-        return NextResponse.json(
-          { detail: result.status === 401 || result.status === 403
-            ? "Access token not recognised. Enter the current moderator token, without quotes or the filename."
-            : "The support service is temporarily unavailable. Please retry." },
-          { status: result.status === 401 || result.status === 403 ? 401 : 503 },
-        );
-      jar.set("amani-admin", token, {
+      if (!result.ok) return new NextResponse(await result.text(), { status: result.status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+      const identity = await result.json();
+      jar.set("amani-admin", identity.token, {
         httpOnly: true,
         secure: process.env.COOKIE_SECURE === 'true' || request.nextUrl.protocol === "https:" || request.headers.get('x-forwarded-proto') === 'https',
         sameSite: "strict",
         path: "/",
         maxAge: 3600,
       });
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({ ok: true, actor: identity.actor, role: identity.role });
     }
     if (
-      !/^admin\/(events|queue(?:\/[A-Z0-9-]+(?:\/reply)?)?|directory|knowledge(?:\/[a-f0-9]+)?|audit)$/.test(
+      !/^admin\/(me|presence|setup|languages\/[a-zA-Z-]+|staff(?:\/[a-z0-9._@-]+)?|events|queue(?:\/[A-Z0-9-]+(?:\/reply)?)?|directory|knowledge(?:\/[a-f0-9]+)?|audit)$/.test(
         path,
       )
     )

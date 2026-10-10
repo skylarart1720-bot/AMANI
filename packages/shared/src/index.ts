@@ -11,7 +11,7 @@ export type SupportPillar =
   | 'emergency';
 
 export type Channel = 'web' | 'whatsapp';
-export type Language = 'en' | 'fr';
+export type Language = 'en' | 'fr' | 'ak' | 'ee' | 'gaa' | 'ha' | 'yo' | 'ig' | 'sw' | 'zu' | 'am' | 'so' | 'ar' | 'es' | 'pt' | 'de' | 'it' | 'hi' | 'zh-CN' | 'ru' | 'uk' | 'bn' | 'tr' | 'ur';
 export type ReplyMode = 'directory' | 'ai' | 'urgent' | 'human';
 export type Triage = 'routine' | 'urgent';
 export type CaseStatus = 'queued' | 'in_progress' | 'resolved';
@@ -83,6 +83,17 @@ export interface Case {
   assignee: string | null;
   created: number;
   messages: Message[];
+}
+
+export interface OnlineStaff {
+  id: string;
+  label: string;
+  role: 'staff' | 'super_admin';
+  online: boolean;
+}
+
+export interface HumanSupportRequest {
+  staff_id?: string | null;
 }
 
 export interface AuditEntry {

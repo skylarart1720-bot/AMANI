@@ -11,15 +11,14 @@ Visitor and moderator conversations use server-sent events. Reverse proxies must
 ## Secrets and access
 
 - `CHAT_ENCRYPTION_KEY`: stable Fernet key, required in production. Back it up separately from encrypted data. Changing it without migrating data makes existing messages unreadable.
-- `ADMIN_API_TOKEN`: high-entropy moderator access token, required in production. Local mode generates one at `data/.admin-token` if none is configured.
-- `STAFF_ACCOUNT_TOKENS`, optional: JSON object of staff id to bearer token, for example `{"ada":"<token>"}`. Each moderator then signs in with their own token, audit rows record their staff id, and removing an id revokes that person at the next restart. Leave unset to use the single shared token.
+- `ADMIN_API_TOKEN`: high-entropy Super Admin token, required in production. Local mode generates one at `data/.admin-token` if none is configured. Only the Super Admin receives this token. Staff IDs/passwords are created through the dashboard and stored in the persistent support database; `STAFF_ACCOUNT_TOKENS` is no longer used.
 - `OPENAI_API_KEY`, optional `OPENAI_BASE_URL`, `OPENAI_MODEL`: configured model provider. The OpenAI implementation requests `store: false`; this does not negate the provider's other retention policies.
 - `SAFE_BROWSING_API_KEY` and/or `VIRUSTOTAL_API_KEY`: reputation lookup credentials. Confirm permitted use and quotas for your deployment.
 - Meta values: `META_WHATSAPP_TOKEN`, `META_WHATSAPP_PHONE_NUMBER_ID`, `META_WEBHOOK_VERIFY_TOKEN`, `META_APP_SECRET`, `META_WHATSAPP_API_VERSION`, and `WHATSAPP_PROVIDER=meta`.
 
 Never place provider keys or moderator tokens in `NEXT_PUBLIC_*` variables. Never expose `data/`, `.env`, `.runtime/` or the project folder through a static file server. Production secrets should be supplied by your hosting secret manager.
 
-The supplied moderator token is suitable for a controlled operator installation, not individual staff identity management. Staff actions are now recorded in an audit trail with actor, action, affected record, outcome and time, and that trail is readable in the moderator workspace; it excludes message text, tokens and phone numbers, is removed after 90 days, and no route edits or deletes an entry. Attribution still depends on the credential: with `STAFF_ACCOUNT_TOKENS` configured a row names the staff id, and without it every row reads `shared-token`, so people sharing one token cannot be told apart. Individual accounts, MFA, role separation and automated revocation remain required before onboarding multiple organisations.
+The login offers Staff and Super Admin. The Super Admin uses the token and can create staff IDs/passwords, reset passwords, disable accounts and read the audit log. Staff cannot access those administrative APIs. Passwords are salted scrypt hashes; staff bearer sessions are stored only as SHA-256 hashes and expire after one hour. Logout, password reset and disabling revoke sessions; live streams check revocation before sending further updates. Audit entries include staff identity, action, record, outcome and time, exclude passwords/message content/tokens, and are retained for 90 days. MFA, additional granular permissions and organisation isolation remain unimplemented.
 
 ## Container deployment
 
@@ -39,7 +38,7 @@ Create and verify a WhatsApp Business application/number with Meta. Select a cur
 
 The gateway acknowledges incoming events after persisting an encrypted inbox entry. A single worker forwards messages to the same support API and retries delivery failures. Delivery is at least once; an ambiguous network failure after Meta accepts a message can still cause duplicate delivery on retry. A failed inbox entry remains available for operational investigation until retention expires; production operations need alerting and a controlled retry procedure.
 
-Commands: `human`, `updates`, `enable ai`, `disable ai`, and `forget`. AI is opt-in. Human replies are retrieved using `updates`; proactive WhatsApp human-message delivery and template messages outside Meta's permitted customer-service window are not implemented. Staff can reply immediately through the web channel.
+Commands: `human`, `updates`, `enable ai`, `disable ai`, `forget`, `languages` and `language <code>`. The language preference persists for new assistant replies; command notices remain English. AI is opt-in. Human replies are retrieved using `updates`; proactive WhatsApp human-message delivery and template messages outside Meta's permitted customer-service window are not implemented. Staff can reply immediately through the web channel.
 
 Meta necessarily receives the phone number. Amani stores delivery payloads encrypted, hashes sender lookup identifiers and purges retained inbox/sender records after seven days. Deletion from Amani cannot delete messages from Meta or the user's device.
 
@@ -51,11 +50,15 @@ The blueprint's organisation list is illustrative, not proof of a partnership. O
 
 Knowledge entries begin pending and are not available to the assistant until published by an authorised reviewer. Withdrawal removes them from future retrieval. Legal, health and crisis content needs qualified review; an administrative publish button does not establish clinical/legal accuracy.
 
-The current urgent-risk classifier is a bilingual rules-based safety net, not a validated clinical classifier. It must undergo specialist evaluation, adversarial testing and appropriate false-negative analysis before public crisis use. The assistant does not establish the user's location and must not promise emergency intervention. 112 is labelled for Ghana.
+The current urgent-risk classifier uses multilingual rules and phrases. It must undergo specialist evaluation, adversarial testing and appropriate false-negative analysis before public crisis use. The assistant does not establish the user's location and must not promise emergency intervention. 112 is labelled for Ghana.
 
-The French interface and French referral responses are implemented. Source documents and moderator messages stay in their original language. Professional review of safety-critical translations remains necessary. Twi, Ga, Ewe, Hausa, SMS/USSD and automated source-ingestion schedules are not implemented in the new public workflow.
+The language selector offers 24 languages. English and French have complete offline interface catalogues; the other catalogues are partial and Ga currently falls back to English. A visible coverage notice identifies incomplete translations. Selected languages guide AI responses when the provider is available, and consent-gated message translation preserves the original transcript. Professional review of translations remains necessary. See docs/LANGUAGES-AND-SUPPORT.md for coverage and completion instructions. SMS/USSD and automated source-ingestion schedules remain unimplemented.
 
 ## Human support
+
+The web visitor can choose an online staff member or the Super Admin. Availability requires a signed-in dashboard sending a heartbeat every 15 seconds and expires after 45 seconds without a heartbeat. The Online/Offline control opts operators in or out. Disabled/expired accounts and revoked sessions do not appear. Assigned conversations are visible to their chosen staff member and the Super Admin; other staff can handle unassigned general-queue cases but cannot read or reply to another staff member's assigned case. The Super Admin retains supervisory access. Visitors may switch to another online person or the general queue.
+
+The public WhatsApp page and Chat on WhatsApp button stay visible when setup is pending. On the orchestrator set `WHATSAPP_GATEWAY_URL` to the gateway's internal origin and `WHATSAPP_SUPPORT_NUMBER` to the public business number in international digits. The public number is distinct from Meta's phone number ID. A valid business number enables the direct wa.me link independently of gateway readiness, allowing manual chats while automation is finalized. Without a public number, the button opens the setup-pending WhatsApp page. Provider credentials remain on the gateway; presence of settings does not prove Meta onboarding or successful automated delivery. The Super Admin Setup & integrations view lists all remaining implementation and operational verification work without exposing secrets.
 
 Visitors can request a moderator without providing contact details. The request appears live in the moderator queue; replies return to the same visitor session. A functioning queue does not mean trained staff are available. Establish staffing hours, escalation protocols, supervision, response targets and agreements with referral partners before advertising live human help.
 
