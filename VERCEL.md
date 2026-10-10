@@ -10,9 +10,9 @@ Recorded so an operator does not have to reconstruct them from project history. 
 | --- | --- | --- |
 | Public website | `amani` | `https://amani-navy.vercel.app` |
 | Moderator dashboard | `amani-hck2` | `https://amani-hck2.vercel.app` |
-| Backend API | Railway project | Record the public HTTPS origin here |
+| Backend API | Railway project | `https://amani-api-production.up.railway.app` |
 
-The backend origin is deliberately left blank rather than guessed. Copy it from the orchestrator's public domain in the Railway networking settings, without a trailing slash, and paste it into `ORCHESTRATOR_URL` for both Vercel projects. A Railway dashboard link is a control panel, not an API origin. Until it is recorded here, nobody can confirm which backend the frontends are talking to.
+The backend origin was confirmed through the successful Railway deployment record and direct health checks. Set this origin, without a trailing slash, as `ORCHESTRATOR_URL` for both Vercel projects. A Railway dashboard link is a control panel, not an API origin.
 
 As of 9 October 2026 both frontends answer on HTTPS. Configuration flags indicate available settings, not successful provider requests. This update adds separate Staff and Super Admin sign-in as described in section 3; verify both backend and frontend deployments before using it.
 

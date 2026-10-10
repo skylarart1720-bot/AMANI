@@ -99,7 +99,12 @@ export default function Dashboard() {
   const [staffId, setStaffId] = useState("");
   const [password, setPassword] = useState("");
   const [identity, setIdentity] = useState<{actor: string; role: string} | null>(null);
-  const [available, setAvailable] = useState(true);
+  const [available, setAvailable] = useState<'online' | 'busy' | 'offline'>('online');
+  const [assignmentOptions, setAssignmentOptions] = useState<{id:string; label:string}[]>([]);
+  const [transferTo, setTransferTo] = useState('');
+  const [note, setNote] = useState('');
+  const [notes, setNotes] = useState<{id:number; actor:string; content:string; created:number}[]>([]);
+  const [activity, setActivity] = useState<{id:string; status:string; open:number; assigned:number; resolved:number; replies_30_days:number; recent:{action:string; resource:string; created:number}[]}[]>([]);
   const [presenceOnline, setPresenceOnline] = useState(false);
   const [setupItems, setSetupItems] = useState<SetupItem[]>([]);
   const [staff, setStaff] = useState<StaffAccount[]>([]);
@@ -172,7 +177,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (!authenticated) return;
     const heartbeat = () => {
-      void api("admin/presence", "POST", {available}).then((result) => setPresenceOnline(result.online)).catch(() => setPresenceOnline(false));
+      void api("admin/presence", "POST", {status:available}).then((result) => setPresenceOnline(result.status !== 'offline')).catch(() => setPresenceOnline(false));
     };
     heartbeat();
     const timer = setInterval(heartbeat, 15000);
@@ -219,11 +224,20 @@ export default function Dashboard() {
       setToken("");
       setPassword("");
       setTab("queue");
-      setAvailable(true);
+      setAvailable('online');
       await refresh();
     });
   };
   const active = cases.find((c) => c.id === selected);
+  useEffect(() => {
+    setNotes([]); setNote(''); setTransferTo('');
+    if (!authenticated || !selected) return;
+    let current = true;
+    void Promise.all([api(`admin/queue/${selected}/notes`),api('admin/assignment-options')]).then(([data,options]) => {
+      if (current) {setNotes(data.notes); setAssignmentOptions(options.staff);}
+    }).catch((e) => {if(current) setError(e.message);});
+    return () => {current = false;};
+  }, [selected, authenticated, api]);
   const languagePicker = <label className="language-picker">Language<select aria-label="Language" value={language} onChange={(e) => setLanguage(e.target.value as Language)}>{languageOptions.map((item) => <option key={item.code} value={item.code} data-original-text>{item.native}</option>)}</select></label>;
   if (!authenticated)
     return localize(
@@ -277,9 +291,11 @@ export default function Dashboard() {
           <span className="wordmark">AMANI</span>
           <span className="muted">{identity?.role === "super_admin" ? "Super Admin" : "Staff"} · {identity?.actor}</span>
         </div>
-        <button className="availability" aria-pressed={available} onClick={() => setAvailable(!available)}>
-          <span className={`presence-dot ${presenceOnline ? "online" : ""}`} /> {presenceOnline ? "Online" : "Offline"}
-        </button>
+        <label className="availability"><span className={`presence-dot ${presenceOnline && available === 'online' ? "online" : ""}`} />Availability
+          <select aria-label="Availability" value={available} onChange={(e) => setAvailable(e.target.value as typeof available)}>
+            <option value="online">Online</option><option value="busy">Busy — pause new requests</option><option value="offline">Offline</option>
+          </select>
+        </label>
         <button
           onClick={() =>
             void perform(async () => {
@@ -305,7 +321,7 @@ export default function Dashboard() {
           </button>
         </div>
         <nav aria-label="Moderator views">
-          {["queue", "directory", "knowledge", ...(identity?.role === "super_admin" ? ["staff", "audit", "setup"] : [])].map((t) => (
+          {["queue", "activity", "directory", "knowledge", ...(identity?.role === "super_admin" ? ["staff", "audit", "setup"] : [])].map((t) => (
             <button
               key={t}
               className={t === tab ? "active" : ""}
@@ -315,12 +331,13 @@ export default function Dashboard() {
                 setNotice("");
                 if (t === "audit") void loadAudit(auditActor).catch((e) => setError(e.message));
                 if (t === "staff") void api("admin/staff").then(setStaff).catch((e) => setError(e.message));
+                if (t === "activity") void api('admin/activity').then((data) => setActivity(data.staff)).catch((e) => setError(e.message));
                 if (t === "setup") void api("admin/setup").then((data) => setSetupItems(data.items)).catch((e) => setError(e.message));
               }}
             >
               {t === "queue"
                 ? "Support queue"
-                : t === "directory"
+                : t === 'activity' ? 'Staff activity' : t === "directory"
                   ? "Referral directory"
                   : t === "knowledge"
                     ? "Knowledge review"
@@ -382,6 +399,15 @@ export default function Dashboard() {
           </tbody></table></div>
           {staff.length === 0 && <p>No staff accounts yet. Create your first account above.</p>}
         </>}
+        {tab === 'activity' && <section>
+          <div className="heading"><h2>Staff activity</h2><button disabled={busy} onClick={() => void perform(async () => setActivity((await api('admin/activity')).staff))}>Refresh activity</button></div>
+          <p className="muted">Case counts reflect current assignments. Replies cover the last 30 days; recent activity shows the last 10 case actions.</p>
+          <div className="activity-grid">{activity.map((person) => <article className="activity-card" key={person.id}>
+            <h3>{person.id}</h3><p>Availability: {person.status}</p>
+            <dl><dt>Open cases</dt><dd>{person.open}</dd><dt>Resolved cases</dt><dd>{person.resolved}</dd><dt>Replies in 30 days</dt><dd>{person.replies_30_days}</dd></dl>
+            <ul>{person.recent.map((item,index) => <li key={index}>{item.action.replace('case.','').replaceAll('_',' ')} · {item.resource} · {new Date(item.created*1000).toLocaleString()}</li>)}</ul>
+          </article>)}</div>
+        </section>}
         {tab === "queue" && (
           <>
             <div className="stats">
@@ -478,6 +504,22 @@ export default function Dashboard() {
                         <option value="resolved">Resolved</option>
                       </select>
                     </div>
+                    <form onSubmit={(e) => {e.preventDefault(); void perform(async () => {
+                      await api(`admin/queue/${active.id}/transfer`, 'POST', {staff_id:transferTo || null});
+                      setSelected(''); await refresh(); setNotice('Case transferred.');
+                    });}}>
+                      <label>Transfer case<select aria-label="Transfer case to" value={transferTo} onChange={(e) => setTransferTo(e.target.value)}>
+                        <option value="">General queue</option>{assignmentOptions.map((person) => <option value={person.id} key={person.id}>{person.label}</option>)}
+                      </select></label><button disabled={busy}>Transfer</button>
+                    </form>
+                    <details><summary>Private staff notes</summary>
+                      <p className="muted">Visible to staff who can access this case. Never sent to the visitor or AI.</p>
+                      {notes.map((item) => <article key={item.id}><strong>{item.actor}</strong> · {new Date(item.created*1000).toLocaleString()}<p data-original-text dir="auto">{item.content}</p></article>)}
+                      <form onSubmit={(e) => {e.preventDefault(); void perform(async () => {
+                        await api(`admin/queue/${active.id}/notes`, 'POST', {content:note});
+                        setNote(''); setNotes((await api(`admin/queue/${active.id}/notes`)).notes);
+                      });}}><label>Internal note<textarea maxLength={4000} required value={note} onChange={(e) => setNote(e.target.value)} /></label><button disabled={busy || !note.trim()}>Save private note</button></form>
+                    </details>
                     <div className="messages" role="log">
                       {active.messages.map((m) => (
                         <article className={`message ${m.role}`} key={m.id}>

@@ -96,6 +96,7 @@ with connect() as conn:
     CREATE TABLE IF NOT EXISTS staff_accounts (id TEXT PRIMARY KEY, password_hash TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, created REAL NOT NULL);
     CREATE TABLE IF NOT EXISTS staff_sessions (token_hash TEXT PRIMARY KEY, staff_id TEXT NOT NULL REFERENCES staff_accounts(id) ON DELETE CASCADE, expires REAL NOT NULL);
     CREATE TABLE IF NOT EXISTS staff_presence (token_hash TEXT PRIMARY KEY, actor TEXT NOT NULL, role TEXT NOT NULL, seen REAL NOT NULL);
+    CREATE TABLE IF NOT EXISTS case_notes (id INTEGER PRIMARY KEY, case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE, actor TEXT NOT NULL, content TEXT NOT NULL, created REAL NOT NULL);
     """)
 
 def migrate_audit(conn):
@@ -107,6 +108,8 @@ def migrate_audit(conn):
 
 with connect() as conn:
     migrate_audit(conn)
+    if 'availability' not in {row['name'] for row in conn.execute('PRAGMA table_info(staff_presence)')}:
+        conn.execute("ALTER TABLE staff_presence ADD COLUMN availability TEXT NOT NULL DEFAULT 'online'")
 
 AUDIT_RETENTION = 86400 * 90
 SESSION_RETENTION = 86400 * 7
@@ -124,7 +127,7 @@ def online_staff():
         rows = conn.execute("""SELECT DISTINCT p.actor AS id,p.role FROM staff_presence p
             LEFT JOIN staff_sessions s ON s.token_hash=p.token_hash
             LEFT JOIN staff_accounts a ON a.id=s.staff_id
-            WHERE p.seen>? AND ((p.role='super_admin' AND p.token_hash=?)
+            WHERE p.availability='online' AND p.seen>? AND ((p.role='super_admin' AND p.token_hash=?)
                 OR (p.role='staff' AND s.expires>? AND a.active=1 AND a.id=p.actor))
             ORDER BY p.role DESC,p.actor""", (time.time() - 45, hashlib.sha256(ADMIN_TOKEN.encode()).hexdigest(), time.time())).fetchall()
     return [{"id": row["id"], "label": "Super Admin" if row["role"] == "super_admin" else row["id"],
@@ -302,6 +305,13 @@ class StaffUpdateInput(BaseModel):
 
 class PresenceInput(BaseModel):
     available: bool = True
+    status: Literal['online', 'busy', 'offline'] | None = None
+
+class TransferInput(BaseModel):
+    staff_id: str | None = Field(default=None, max_length=60)
+
+class NoteInput(BaseModel):
+    content: str = Field(min_length=1, max_length=4000)
 
 class HandoffInput(BaseModel):
     staff_id: str | None = Field(default=None, max_length=60)
@@ -605,13 +615,17 @@ def install(app):
     def presence(request: Request, payload: PresenceInput):
         token = request.headers.get("authorization", "").removeprefix("Bearer ")
         digest = hashlib.sha256(token.encode()).hexdigest()
+        status = payload.status or ('online' if payload.available else 'offline')
         with connect() as conn:
-            if payload.available:
-                conn.execute("INSERT INTO staff_presence VALUES(?,?,?,?) ON CONFLICT(token_hash) DO UPDATE SET seen=excluded.seen",
-                             (digest, request.state.actor, request.state.role, time.time()))
+            previous = conn.execute('SELECT availability FROM staff_presence WHERE token_hash=?', (digest,)).fetchone()
+            if status != (previous['availability'] if previous else 'offline'):
+                record_audit('staff.availability_changed', request.state.actor, request.state.actor, detail=status, conn=conn)
+            if status != 'offline':
+                conn.execute("INSERT INTO staff_presence(token_hash,actor,role,seen,availability) VALUES(?,?,?,?,?) ON CONFLICT(token_hash) DO UPDATE SET seen=excluded.seen,availability=excluded.availability",
+                             (digest, request.state.actor, request.state.role, time.time(), status))
             else:
                 conn.execute("DELETE FROM staff_presence WHERE token_hash=?", (digest,))
-        return {"online": payload.available}
+        return {"online": status == 'online', 'status': status}
 
     @app.get("/support/staff")
     def available_staff():
@@ -947,6 +961,62 @@ def install(app):
             conn.execute("UPDATE cases SET status='in_progress',assignee=COALESCE(assignee,?) WHERE id=?", (request.state.actor, case_id))
             record_audit("case.replied", request.state.actor, case_id, "success", f"chars={len(payload.message)}", conn=conn)
         return {"sent": True}
+
+    @app.get('/admin/assignment-options')
+    def assignment_options(request: Request):
+        with connect() as conn:
+            rows = conn.execute('SELECT id FROM staff_accounts WHERE active=1 ORDER BY id').fetchall()
+        return {'staff': [{'id': 'super-admin', 'label': 'Super Admin'}, *[{'id': row['id'], 'label': row['id']} for row in rows]]}
+
+    @app.post('/admin/queue/{case_id}/transfer')
+    def transfer(case_id: str, request: Request, payload: TransferInput):
+        target = payload.staff_id.lower() if payload.staff_id else None
+        with connect() as conn:
+            case = conn.execute('SELECT * FROM cases WHERE id=?', (case_id,)).fetchone()
+            if not case:
+                raise HTTPException(404, 'Case not found')
+            require_case_access(request, case)
+            if target and target != 'super-admin' and not conn.execute('SELECT 1 FROM staff_accounts WHERE id=? AND active=1', (target,)).fetchone():
+                raise HTTPException(422, 'Choose an active staff account.')
+            conn.execute("UPDATE cases SET assignee=?,status=CASE WHEN status='resolved' THEN status ELSE 'queued' END WHERE id=?", (target, case_id))
+            record_audit('case.transferred', request.state.actor, case_id, detail=target or 'general_queue', conn=conn)
+        return {'updated': True}
+
+    @app.get('/admin/queue/{case_id}/notes')
+    def notes(case_id: str, request: Request):
+        with connect() as conn:
+            case = conn.execute('SELECT * FROM cases WHERE id=?', (case_id,)).fetchone()
+            if not case:
+                raise HTTPException(404, 'Case not found')
+            require_case_access(request, case)
+            rows = conn.execute('SELECT * FROM case_notes WHERE case_id=? ORDER BY created,id', (case_id,)).fetchall()
+        return {'notes': [{**dict(row), 'content': CIPHER.decrypt(row['content'].encode()).decode()} for row in rows]}
+
+    @app.post('/admin/queue/{case_id}/notes')
+    def add_note(case_id: str, request: Request, payload: NoteInput):
+        if not payload.content.strip():
+            raise HTTPException(422, 'Write a note first.')
+        with connect() as conn:
+            case = conn.execute('SELECT * FROM cases WHERE id=?', (case_id,)).fetchone()
+            if not case:
+                raise HTTPException(404, 'Case not found')
+            require_case_access(request, case)
+            conn.execute('INSERT INTO case_notes(case_id,actor,content,created) VALUES(?,?,?,?)', (case_id, request.state.actor, CIPHER.encrypt(payload.content.strip().encode()).decode(), time.time()))
+            record_audit('case.note_added', request.state.actor, case_id, conn=conn)
+        return {'saved': True}
+
+    @app.get('/admin/activity')
+    def activity(request: Request):
+        with connect() as conn:
+            actors = ['super-admin', *[r['id'] for r in conn.execute('SELECT id FROM staff_accounts ORDER BY id')]] if request.state.role == 'super_admin' else [request.state.actor]
+            result = []
+            for actor in actors:
+                counts = {r['status']: r['count'] for r in conn.execute('SELECT status,COUNT(*) AS count FROM cases WHERE assignee=? GROUP BY status', (actor,))}
+                recent = [dict(r) for r in conn.execute("SELECT action,resource,created FROM audit WHERE actor=? AND outcome='success' AND action IN ('case.replied','case.status_updated','case.transferred','case.note_added') ORDER BY id DESC LIMIT 10", (actor,))]
+                replies = conn.execute("SELECT COUNT(*) FROM audit WHERE actor=? AND action='case.replied' AND outcome='success' AND created>?", (actor,time.time()-86400*30)).fetchone()[0]
+                presence = conn.execute('SELECT availability FROM staff_presence WHERE actor=? AND seen>? ORDER BY seen DESC LIMIT 1', (actor,time.time()-45)).fetchone()
+                result.append({'id': actor, 'status': presence['availability'] if presence else 'offline', 'assigned':sum(counts.values()), 'open':counts.get('queued',0)+counts.get('in_progress',0), 'resolved':counts.get('resolved',0), 'replies_30_days':replies, 'recent':recent})
+        return {'staff':result}
 
     @app.get("/admin/audit")
     def audit(request: Request, actor: str | None = Query(default=None, max_length=60),

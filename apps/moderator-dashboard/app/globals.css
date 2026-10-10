@@ -422,3 +422,10 @@ th {
 [dir="rtl"] input[type="password"], [dir="rtl"] input[type="url"] { direction: ltr; }
 :focus-visible { outline: 3px solid #278148; outline-offset: 3px; }
 @media (max-width: 600px) { header .language-picker { width: 100%; } .language-picker select { flex: 1; max-width: 220px; } }
+.activity-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:18px;}
+.activity-card {padding:22px;border:1px solid var(--line, #dce5df);border-radius:16px;background:#fff;overflow-wrap:anywhere;}
+.activity-card dl {display:grid;grid-template-columns:1fr auto;gap:8px;}
+.activity-card dd {margin:0;font-weight:700;}
+.activity-card ul {padding-inline-start:20px;font-size:.85rem;}
+.availability {display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.conversation details {padding:16px;border:1px solid #dce5df;border-radius:12px;margin-block:16px;}
