@@ -9,6 +9,9 @@
     "build": "npm run build:web && npm run build:dashboard",
     "lint:web": "npm --prefix apps/web run lint",
     "lint:dashboard": "npm --prefix apps/moderator-dashboard run lint",
-    "lint": "npm run lint:web && npm run lint:dashboard"
+    "lint": "npm run lint:web && npm run lint:dashboard",
+    "typecheck:web": "npm --prefix apps/web run typecheck",
+    "typecheck:dashboard": "npm --prefix apps/moderator-dashboard run typecheck",
+    "typecheck": "npm run typecheck:web && npm run typecheck:dashboard"
   }
 }

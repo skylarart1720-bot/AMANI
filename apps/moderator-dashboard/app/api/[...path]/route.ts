@@ -62,7 +62,7 @@ async function proxy(
       return NextResponse.json({ ok: true });
     }
     if (
-      !/^admin\/(events|queue(?:\/[A-Z0-9-]+(?:\/reply)?)?|directory|knowledge(?:\/[a-f0-9]+)?)$/.test(
+      !/^admin\/(events|queue(?:\/[A-Z0-9-]+(?:\/reply)?)?|directory|knowledge(?:\/[a-f0-9]+)?|audit)$/.test(
         path,
       )
     )
@@ -79,7 +79,8 @@ async function proxy(
         { detail: "Request too large" },
         { status: 413 },
       );
-    const result = await fetch(`${base}/${path}`, {
+    // admin/audit is filtered by staff id and action, so carry the search upstream.
+    const result = await fetch(`${base}/${path}${request.nextUrl.search}`, {
       method: request.method,
       headers: {
         Authorization: `Bearer ${token}`,
@@ -90,8 +91,11 @@ async function proxy(
       signal:
         path === "admin/events" ? request.signal : AbortSignal.timeout(10000),
     });
+    // Pass the upstream status through: without it an upstream auth or rate-limit
+    // failure on the event stream is reported to the browser as a healthy 200.
     if (result.headers.get("content-type")?.includes("text/event-stream"))
       return new NextResponse(result.body, {
+        status: result.status,
         headers: {
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-store",

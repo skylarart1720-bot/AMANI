@@ -46,22 +46,22 @@ async function proxy(
         { detail: "Request too large" },
         { status: 413 },
       );
-    const response = await fetch(
-      `${process.env.ORCHESTRATOR_URL || "http://127.0.0.1:8000"}/${path}`,
-      {
-        method: request.method,
-        body: body || undefined,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: request.headers.get("authorization") || "",
-        },
-        cache: "no-store",
-        signal:
-          path === "support/events"
-            ? request.signal
-            : AbortSignal.timeout(35000),
+    // Filtered routes such as support/directory accept query parameters, so the
+    // search string must be carried upstream instead of being dropped here.
+    const upstream = `${process.env.ORCHESTRATOR_URL || "http://127.0.0.1:8000"}/${path}${request.nextUrl.search}`;
+    const response = await fetch(upstream, {
+      method: request.method,
+      body: body || undefined,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: request.headers.get("authorization") || "",
       },
-    );
+      cache: "no-store",
+      signal:
+        path === "support/events"
+          ? request.signal
+          : AbortSignal.timeout(35000),
+    });
     if (response.headers.get("content-type")?.includes("text/event-stream"))
       return new NextResponse(response.body, {
         status: response.status,

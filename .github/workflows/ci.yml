@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install service and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            -r apps/orchestrator/requirements.txt \
+            -r services/url-safety/requirements.txt \
+            -r apps/whatsapp-gateway/requirements.txt \
+            -r scripts/test_requirements.txt
+      - name: Run tests
+        run: python -m pytest apps/orchestrator/tests services/url-safety/tests apps/whatsapp-gateway/tests -q
+      - name: Reject syntax errors outside the test suite
+        run: python -m compileall -q apps services scripts
+
+  frontend:
+    name: Frontend ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [web, moderator-dashboard]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/${{ matrix.app }}/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: apps/${{ matrix.app }}
+      - name: Lint
+        run: npm run lint
+        working-directory: apps/${{ matrix.app }}
+      - name: Build
+        run: npm run build
+        working-directory: apps/${{ matrix.app }}
+      - name: Type check
+        run: npm run typecheck
+        working-directory: apps/${{ matrix.app }}
+
+  container-smoke:
+    name: Container images build and boot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate throwaway production secrets
+        run: |
+          mkdir -p /tmp/amani-smoke
+          python3 -c "import secrets; print(secrets.token_urlsafe(32))" > /tmp/amani-smoke/admin-token
+          python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" > /tmp/amani-smoke/chat-key
+      - name: Build orchestrator image
+        run: docker build -t amani-orchestrator:ci apps/orchestrator
+      - name: Build url-safety image
+        run: docker build -t amani-url-safety:ci services/url-safety
+      - name: Build whatsapp gateway image
+        run: docker build -t amani-gateway:ci apps/whatsapp-gateway
+      - name: Start orchestrator with synthetic configuration
+        run: |
+          docker run -d --name amani-orchestrator -p 127.0.0.1:8000:8000 \
+            -e APP_ENV=production \
+            -e PROJECT_ROOT=/app \
+            -e AMANI_DATA_DIR=/data \
+            -e URL_SAFETY_URL=http://127.0.0.1:8001 \
+            -e CHAT_ENCRYPTION_KEY="$(cat /tmp/amani-smoke/chat-key)" \
+            -e ADMIN_API_TOKEN="$(cat /tmp/amani-smoke/admin-token)" \
+            amani-orchestrator:ci
+      - name: Verify the support API answers on synthetic data
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health > /dev/null; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8000/health
+          curl -fsS http://127.0.0.1:8000/support/directory > /dev/null
+          curl -fsS -X POST http://127.0.0.1:8000/support/sessions > /dev/null
+          if curl -fsS http://127.0.0.1:8000/admin/queue > /dev/null; then
+            echo "Admin routes answered without authentication." >&2
+            exit 1
+          fi
+      - name: Container logs
+        if: failure()
+        run: docker logs amani-orchestrator
