@@ -32,6 +32,11 @@ try:
     history = checked(visitor.get(web+'/api/support/messages'))
     assert any(m['content']=='Synthetic deployment check: human reply delivered.' for m in history['messages'])
     checked(moderator.patch(admin+'/api/admin/queue/'+case,json={'status':'resolved'}))
+    history=checked(visitor.get(web+'/api/support/messages'))
+    assert history['case']['events'][-1]['kind']=='resolved'
+    checked(visitor.post(web+'/api/support/cases/'+case+'/feedback',json={'rating':5,'comment':'Synthetic feedback check.','consent':True}))
+    assert any(e['case_id']==case for e in checked(moderator.get(admin+'/api/admin/feedback'))['entries'])
+    assert checked(visitor.get(web+'/api/support/messages'))['case']['feedback_submitted']
     checked(moderator.patch(admin+'/api/admin/queue/'+case,json={'status':'queued'}))
     checked(moderator.post(admin+'/api/admin/presence',json={'status':'busy'}))
     assert 'super-admin' not in {x['id'] for x in checked(visitor.get(web+'/api/support/staff'))['staff']}
@@ -54,18 +59,43 @@ with sync_playwright() as p:
     for width in (390,768,1440):
         page.set_viewport_size({'width':width,'height':900})
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-    page.goto(admin,wait_until='domcontentloaded')
+    visitor_page=page
+    page=browser.new_page()
+    page.goto(admin,wait_until='load')
+    page.wait_for_timeout(1500)
     page.get_by_label('Sign in as').select_option('super_admin')
     page.get_by_label('Super Admin token').fill(token)
     page.get_by_role('button',name='Sign in',exact=True).click()
     expect(page.get_by_role('heading',name='Support operations')).to_be_visible(timeout=40000)
+    visitor_page.get_by_role('textbox',name='Your message').fill('Synthetic feedback browser check')
+    visitor_page.get_by_role('button',name='Send message',exact=True).click()
+    expect(visitor_page.locator('.message.assistant')).to_have_count(1,timeout=40000)
+    browser_token=visitor_page.evaluate("sessionStorage.getItem('amani-session')")
+    browser_headers={'Authorization':'Bearer '+browser_token}
+    browser_case=checked(visitor.post(web+'/api/support/handoff',headers=browser_headers,json={}))['id']
+    try:
+        assert page.request.post(admin+'/api/admin/queue/'+browser_case+'/transfer',data={'staff_id':'super-admin'}).status==200
+        assert page.request.patch(admin+'/api/admin/queue/'+browser_case,data={'status':'resolved'}).status==200
+        expect(visitor_page.get_by_text('Your support request has been resolved.',exact=True)).to_be_visible(timeout=30000)
+        visitor_page.get_by_label('Support rating',exact=True).select_option('4')
+        visitor_page.get_by_label('Optional feedback comment',exact=True).fill('Synthetic browser feedback.')
+        visitor_page.get_by_label('I agree to share this rating and comment with Super Admin.',exact=True).check()
+        visitor_page.get_by_role('button',name='Submit feedback',exact=True).click()
+        expect(visitor_page.get_by_text('Thank you. Your feedback has been submitted.',exact=True)).to_be_visible(timeout=30000)
+        for width in (390,768,1440):
+            visitor_page.set_viewport_size({'width':width,'height':900})
+            assert visitor_page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+    finally:
+        checked(visitor.delete(web+'/api/support/sessions',headers=browser_headers))
     page.get_by_label('Availability',exact=True).select_option('busy')
     page.get_by_role('button',name='Staff activity',exact=True).click()
     expect(page.get_by_role('heading',name='Staff activity',exact=True)).to_be_visible()
+    page.get_by_role('button',name='Visitor feedback',exact=True).click()
+    expect(page.get_by_role('heading',name='Visitor feedback',exact=True)).to_be_visible()
     for width in (390,768,1440):
         page.set_viewport_size({'width':width,'height':900})
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
     assert not errors
     assert page.request.post(admin+'/api/logout').status == 200
     browser.close()
-print('PASS: live mobile layouts, 24 languages, browser Super Admin login; no page errors')
+print('PASS: feedback form, case notices, dashboard, mobile layouts, 24 languages, browser Super Admin login; no page errors')

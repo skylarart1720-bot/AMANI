@@ -19,3 +19,5 @@ artifacts/
 data/
 *.tsbuildinfo
 .vercel/
+backups/
+*.amani-backup

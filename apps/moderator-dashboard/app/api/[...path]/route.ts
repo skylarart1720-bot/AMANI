@@ -78,7 +78,7 @@ async function proxy(
       return NextResponse.json({ ok: true, actor: identity.actor, role: identity.role });
     }
     if (
-      !/^admin\/(me|presence|activity|assignment-options|setup|languages\/[a-zA-Z-]+|staff(?:\/[a-z0-9._@-]+)?|events|queue(?:\/[A-Z0-9-]+(?:\/(?:reply|transfer|notes))?)?|directory|knowledge(?:\/[a-f0-9]+)?|audit)$/.test(
+      !/^admin\/(me|presence|feedback|service-settings|activity|assignment-options|setup|languages\/[a-zA-Z-]+|staff(?:\/[a-z0-9._@-]+)?|events|queue(?:\/[A-Z0-9-]+(?:\/(?:reply|transfer|notes))?)?|directory|knowledge(?:\/[a-f0-9]+)?|audit)$/.test(
         path,
       )
     )

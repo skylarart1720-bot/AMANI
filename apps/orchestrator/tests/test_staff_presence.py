@@ -95,7 +95,7 @@ def test_setup_checklist_is_super_admin_only_and_shows_unfinished_work():
     items = {item["name"]: item for item in response.json()["items"]}
     assert items["WhatsApp"]["status"] == "Setup required"
     assert items["MFA and organisation isolation"]["status"] == "Not implemented"
-    assert items["Backups and restoration"]["status"] == "Not verified"
+    assert 'hosted schedule pending' in items["Backups and restoration"]["status"]
     assert support.ADMIN_TOKEN not in response.text and "password_hash" not in response.text
 
 def test_whatsapp_chat_link_does_not_require_automation(monkeypatch):

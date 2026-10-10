@@ -1119,3 +1119,8 @@ select {
 .button.whatsapp-chat { background: #198647; border-color: #198647; color: white; }
 .button.whatsapp-chat:hover { background: #126b38; color: white; }
 @media (max-width: 600px) { .online-support { padding: 16px; } .online-person { width: 100%; min-width: 0; } .whatsapp-panel { padding: 20px; } }
+.feedback-panel,.case-notices {margin:16px;padding:20px;border:1px solid #dce5df;border-radius:16px;background:#f5faf7;}
+.feedback-panel form {display:grid;gap:12px;}
+.feedback-panel label {display:grid;gap:6px;}
+.feedback-panel label:has(input[type=checkbox]) {display:flex;align-items:flex-start;}
+.feedback-panel textarea,.feedback-panel select {width:100%;max-width:100%;padding:10px;border:1px solid #c4d6c9;border-radius:8px;}

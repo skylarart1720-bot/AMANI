@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 const allowed = new Set([
   "support/status",
   "support/staff",
+  "support/service-settings",
   "support/directory",
   "support/sessions",
   "support/messages",
@@ -20,7 +21,7 @@ async function proxy(
   context: { params: Promise<{ path: string[] }> },
 ) {
   const path = (await context.params).path.join("/");
-  if (!allowed.has(path) && !/^support\/languages\/[a-zA-Z-]+$/.test(path))
+  if (!allowed.has(path) && !/^support\/languages\/[a-zA-Z-]+$/.test(path) && !/^support\/cases\/[A-Z0-9-]+\/feedback$/.test(path))
     return NextResponse.json({ detail: "Not found" }, { status: 404 });
   if (request.method !== "GET") {
     const origin = request.headers.get("origin");

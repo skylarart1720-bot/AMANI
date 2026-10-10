@@ -99,3 +99,6 @@ The configured AI provider returned `credit_balance_exhausted`; real multilingua
 # Case management and staff activity
 
 106 backend tests passed. Both frontends passed lint and type checks; the moderator production build passed. The synthetic browser workflow passed transfers, encrypted private notes excluded from visitor history, busy availability, resolve/reopen, activity reporting, human replies, deletion and mobile layouts. Repeat with `scripts/browser_case_management.py`; it defaults to local servers. Set `AMANI_TEST_WEB` and `AMANI_TEST_ADMIN` only when intentionally testing a hosted deployment. The script deletes its own synthetic conversation and logs out afterwards.
+# Visitor feedback and recovery
+
+109 backend tests passed, including feedback ownership/consent/duplicates, encryption, deletion, Super Admin permissions, service-information settings and encrypted backup/restore. Both frontends passed lint, type checks and production builds. Recovery tests preserve account/settings records and decrypt restored synthetic messages; invalid keys and nonempty restore destinations are rejected, and staff sessions/presence are cleared. See [docs/BACKUP-AND-RECOVERY.md](docs/BACKUP-AND-RECOVERY.md) for host commands and operational setup.

@@ -94,11 +94,17 @@ export default function Page() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [service, setService] = useState({hours:'Support hours have not yet been published.',response:'Response times are not guaranteed.'});
+  const [rating, setRating] = useState('5');
+  const [feedbackComment, setFeedbackComment] = useState('');
+  const [feedbackConsent, setFeedbackConsent] = useState(false);
   const [aiConsent, setAiConsent] = useState(false);
   const [caseInfo, setCaseInfo] = useState<{
     id: string;
     status: string;
     assignee?: string | null;
+    feedback_submitted?: boolean;
+    events?: {id:number; kind:string; target:string|null; created:number}[];
   } | null>(null);
   const [related, setRelated] = useState<Referral[]>([]);
   const [url, setUrl] = useState("");
@@ -198,6 +204,8 @@ export default function Page() {
     const timer = setInterval(() => void loadStaff(), 10000);
     return () => { active = false; clearInterval(timer); };
   }, [api]);
+  useEffect(() => {void api('service-settings').then(setService).catch(() => {});},[api]);
+  useEffect(() => {setFeedbackComment(''); setFeedbackConsent(false);},[caseInfo?.id,sessionToken]);
   useEffect(() => {
     if (!sessionToken) return;
     const controller = new AbortController();
@@ -604,8 +612,9 @@ export default function Page() {
             <>
             <section className="online-support" aria-label="Online human support">
               <div><p className="eyebrow">HUMAN SUPPORT</p><h2>Choose someone to talk to</h2><p>Online staff appear below. Your conversation stays here.</p></div>
+              <p><strong>Support hours</strong>: <span data-original-text>{service.hours}</span></p><p data-original-text>{service.response}</p>
               {staffError ? <p role="status">{staffError}</p> : staffLoading ? <p>Checking availability...</p> : onlineStaff.length ? <div className="online-staff-list">{onlineStaff.map((person) => <button className="online-person" key={person.id} onClick={() => void handoff(person.id)} disabled={busy}><span className="presence-dot online" /><span><strong data-original-text={person.role !== "super_admin"}>{person.label}</strong><small>Online · {person.role === "super_admin" ? "Super Admin" : "Staff"}</small></span><ArrowRight size={16} /></button>)}</div> : <p className="muted">No support staff are online right now. You can still join the general queue.</p>}
-              {choosingStaff && <div className="human-choice"><p>Select an online person above, or leave your request in the general queue.</p><button className="button secondary" disabled={busy} onClick={() => void handoff()}>Join general queue</button><button className="text-link" onClick={() => setChoosingStaff(false)}>Cancel</button></div>}
+              {choosingStaff && <div className="human-choice"><p><strong>Support hours</strong>: <span data-original-text>{service.hours}</span></p><p data-original-text>{service.response}</p><p>This is not an emergency service. In Ghana, call 112 for immediate danger.</p><p>Select an online person above, or leave your request in the general queue.</p><button className="button secondary" disabled={busy} onClick={() => void handoff()}>Join general queue</button><button className="text-link" onClick={() => setChoosingStaff(false)}>Cancel</button></div>}
             </section>
             <div className="support-layout">
               <section className="chat-tool" aria-label="Support conversation">
@@ -712,6 +721,19 @@ export default function Page() {
                     </span>
                   </div>
                 )}
+                {caseInfo?.events?.length ? <div className="case-notices" aria-live="polite">{caseInfo.events.slice(-5).map((event) => <p key={event.id}>
+                  {event.kind === 'transferred' ? <>Your request was transferred to <span data-original-text>{event.target === 'super-admin' ? 'Super Admin' : event.target || 'General queue'}</span>.</> : event.kind === 'resolved' ? 'Your support request has been resolved.' : event.kind === 'queued' ? 'Your support request is waiting in the queue.' : 'Your support request is in progress.'}
+                </p>)}</div> : null}
+                {caseInfo?.status === 'resolved' && <section className="feedback-panel">
+                  <h3>How was your human support?</h3>
+                  {caseInfo.feedback_submitted ? <p role="status">Thank you. Your feedback has been submitted.</p> : <form onSubmit={(e) => {e.preventDefault(); const current=generation.current; const caseId=caseInfo.id; setBusy(true); void api(`cases/${caseId}/feedback`,'POST',{rating:Number(rating),comment:feedbackComment,consent:feedbackConsent}).then(async () => {if(current===generation.current){setFeedbackComment('');setFeedbackConsent(false);await refreshMessages();}}).catch((e) => {if(current===generation.current)setError(e.message);}).finally(() => setBusy(false));}}>
+                    <p>Optional feedback is shared with Super Admin. Please avoid names or sensitive details. Deleting this conversation also removes its feedback from the active service.</p>
+                    <label>Support rating<select aria-label="Support rating" value={rating} onChange={(e) => setRating(e.target.value)}><option value="5">5 — Very helpful</option><option value="4">4 — Helpful</option><option value="3">3 — Neutral</option><option value="2">2 — Unhelpful</option><option value="1">1 — Very unhelpful</option></select></label>
+                    <label>Optional feedback comment<textarea maxLength={2000} value={feedbackComment} onChange={(e) => setFeedbackComment(e.target.value)} /></label>
+                    <label><input type="checkbox" checked={feedbackConsent} onChange={(e) => setFeedbackConsent(e.target.checked)} />I agree to share this rating and comment with Super Admin.</label>
+                    <button className="button secondary" disabled={busy || !feedbackConsent}>Submit feedback</button>
+                  </form>}
+                </section>}
                 <div className="composer-area">
                   <label className="topic-select">
                     Topic{" "}

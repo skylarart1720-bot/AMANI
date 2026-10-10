@@ -107,6 +107,8 @@ export default function Dashboard() {
   const [activity, setActivity] = useState<{id:string; status:string; open:number; assigned:number; resolved:number; replies_30_days:number; recent:{action:string; resource:string; created:number}[]}[]>([]);
   const [presenceOnline, setPresenceOnline] = useState(false);
   const [setupItems, setSetupItems] = useState<SetupItem[]>([]);
+  const [service, setService] = useState({hours:'',response:''});
+  const [feedback, setFeedback] = useState<{total:number;average_rating:number|null;distribution:Record<string,number>;entries:{case_id:string;rating:number;comment:string;created:number;assignee:string|null}[]}>({total:0,average_rating:null,distribution:{},entries:[]});
   const [staff, setStaff] = useState<StaffAccount[]>([]);
   const [newStaffId, setNewStaffId] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -321,7 +323,7 @@ export default function Dashboard() {
           </button>
         </div>
         <nav aria-label="Moderator views">
-          {["queue", "activity", "directory", "knowledge", ...(identity?.role === "super_admin" ? ["staff", "audit", "setup"] : [])].map((t) => (
+          {["queue", "activity", "directory", "knowledge", ...(identity?.role === "super_admin" ? ["staff", "feedback", "audit", "setup"] : [])].map((t) => (
             <button
               key={t}
               className={t === tab ? "active" : ""}
@@ -332,12 +334,14 @@ export default function Dashboard() {
                 if (t === "audit") void loadAudit(auditActor).catch((e) => setError(e.message));
                 if (t === "staff") void api("admin/staff").then(setStaff).catch((e) => setError(e.message));
                 if (t === "activity") void api('admin/activity').then((data) => setActivity(data.staff)).catch((e) => setError(e.message));
+                if (t === 'feedback') void api('admin/feedback').then(setFeedback).catch((e) => setError(e.message));
+                if (t === 'setup') void api('admin/service-settings').then(setService).catch((e) => setError(e.message));
                 if (t === "setup") void api("admin/setup").then((data) => setSetupItems(data.items)).catch((e) => setError(e.message));
               }}
             >
               {t === "queue"
                 ? "Support queue"
-                : t === 'activity' ? 'Staff activity' : t === "directory"
+                : t === 'feedback' ? 'Visitor feedback' : t === 'activity' ? 'Staff activity' : t === "directory"
                   ? "Referral directory"
                   : t === "knowledge"
                     ? "Knowledge review"
@@ -356,6 +360,14 @@ export default function Dashboard() {
           </p>
         )}
         {tab === "setup" && identity?.role === "super_admin" && <>
+          <section><h2>Support hours and response expectations</h2>
+            <p>Include the time zone and days of operation. Visitors see this before joining the queue.</p>
+            <form onSubmit={(e) => {e.preventDefault();void perform(async () => {setService(await api('admin/service-settings','PUT',service));setNotice('Support information saved.');});}}>
+              <label>Support hours<input required maxLength={300} value={service.hours} onChange={(e) => setService({...service,hours:e.target.value})} /></label>
+              <label>Response expectations<textarea required maxLength={500} value={service.response} onChange={(e) => setService({...service,response:e.target.value})} /></label>
+              <button disabled={busy}>Save support information</button>
+            </form>
+          </section>
           <div className="heading"><div><h2>Setup & integrations</h2><p className="muted">Configured services, unfinished features and the work needed to finalize AMANI.</p></div><button disabled={busy} onClick={() => void perform(async () => setSetupItems((await api("admin/setup")).items))}>Check configuration</button></div>
           <div className="setup-grid">{setupItems.map((item) => <section className="setup-card" key={item.name}><h3>{item.name}</h3><strong>{item.status}</strong><p>{item.next}</p>{item.missing_api_settings?.length ? <small>Missing API settings: {item.missing_api_settings.join(", ")}</small> : null}</section>)}</div>
           <section className="setup-card language-workbench"><h3>Translation catalogues</h3><p>Complete the selected language with the configured AI provider. Only public interface wording is sent. AI credits are required; native-speaker review is still needed.</p><p>{coverage.translated} / {coverage.total} · <span data-original-text>{languageOptions.find((item) => item.code === language)?.native}</span></p><div className="actions"><button onClick={refreshTranslations}>Refresh translations</button><button className="primary" disabled={busy || language === "en" || coverage.status === "generating"} onClick={() => void perform(async () => { await api(`admin/languages/${language}`, "POST", {}); refreshTranslations(); setNotice("Preparing translations…"); })}>Complete selected language</button></div></section>
@@ -399,6 +411,14 @@ export default function Dashboard() {
           </tbody></table></div>
           {staff.length === 0 && <p>No staff accounts yet. Create your first account above.</p>}
         </>}
+        {tab === 'feedback' && identity?.role === 'super_admin' && <section>
+          <div className="heading"><h2>Visitor feedback</h2><button disabled={busy} onClick={() => void perform(async () => setFeedback(await api('admin/feedback')))}>Refresh feedback</button></div>
+          <p>{feedback.total} ratings · Average: {feedback.average_rating?.toFixed(1) ?? 'No ratings yet'} / 5</p>
+          <p className="muted">Feedback is optional and is removed when its conversation expires or is deleted. This view shows the latest 100 entries.</p>
+          <div className="activity-grid">{[5,4,3,2,1].map((score) => <article className="activity-card" key={score}>{score} / 5: {feedback.distribution[String(score)] || 0}</article>)}</div>
+          {!feedback.entries.length && <p>No visitor feedback yet.</p>}
+          {feedback.entries.map((item) => <article className="activity-card" key={item.case_id}><strong>{item.rating} / 5 · {item.case_id}</strong><p>{new Date(item.created*1000).toLocaleString()}</p><p data-original-text dir="auto">{item.comment || 'No comment'}</p></article>)}
+        </section>}
         {tab === 'activity' && <section>
           <div className="heading"><h2>Staff activity</h2><button disabled={busy} onClick={() => void perform(async () => setActivity((await api('admin/activity')).staff))}>Refresh activity</button></div>
           <p className="muted">Case counts reflect current assignments. Replies cover the last 30 days; recent activity shows the last 10 case actions.</p>

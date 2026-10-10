@@ -97,6 +97,9 @@ with connect() as conn:
     CREATE TABLE IF NOT EXISTS staff_sessions (token_hash TEXT PRIMARY KEY, staff_id TEXT NOT NULL REFERENCES staff_accounts(id) ON DELETE CASCADE, expires REAL NOT NULL);
     CREATE TABLE IF NOT EXISTS staff_presence (token_hash TEXT PRIMARY KEY, actor TEXT NOT NULL, role TEXT NOT NULL, seen REAL NOT NULL);
     CREATE TABLE IF NOT EXISTS case_notes (id INTEGER PRIMARY KEY, case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE, actor TEXT NOT NULL, content TEXT NOT NULL, created REAL NOT NULL);
+    CREATE TABLE IF NOT EXISTS case_events (id INTEGER PRIMARY KEY, case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE, kind TEXT NOT NULL, target TEXT, created REAL NOT NULL);
+    CREATE TABLE IF NOT EXISTS case_feedback (case_id TEXT PRIMARY KEY REFERENCES cases(id) ON DELETE CASCADE, rating INTEGER NOT NULL, comment TEXT NOT NULL, created REAL NOT NULL);
+    CREATE TABLE IF NOT EXISTS support_settings (id INTEGER PRIMARY KEY CHECK(id=1), hours TEXT NOT NULL, response TEXT NOT NULL);
     """)
 
 def migrate_audit(conn):
@@ -312,6 +315,29 @@ class TransferInput(BaseModel):
 
 class NoteInput(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
+
+class FeedbackInput(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    comment: str = Field(default='', max_length=2000)
+    consent: bool = False
+
+class ServiceSettingsInput(BaseModel):
+    hours: str = Field(min_length=3, max_length=300)
+    response: str = Field(min_length=3, max_length=500)
+
+def service_settings():
+    with connect() as conn:
+        row = conn.execute('SELECT hours,response FROM support_settings WHERE id=1').fetchone()
+    return dict(row) if row else {'hours':'Support hours have not yet been published.', 'response':'Response times are not guaranteed. You may leave a request when nobody is online.'}
+
+def visitor_case(sid):
+    with connect() as conn:
+        case = conn.execute('SELECT id,status,priority,assignee FROM cases WHERE session=? ORDER BY created DESC LIMIT 1',(sid,)).fetchone()
+        if not case:
+            return None
+        events = [dict(r) for r in conn.execute('SELECT id,kind,target,created FROM case_events WHERE case_id=? ORDER BY id', (case['id'],))]
+        feedback = conn.execute('SELECT rating FROM case_feedback WHERE case_id=?',(case['id'],)).fetchone()
+    return {**dict(case), 'events':events, 'feedback_submitted':bool(feedback)}
 
 class HandoffInput(BaseModel):
     staff_id: str | None = Field(default=None, max_length=60)
@@ -550,7 +576,7 @@ def install(app):
                 return JSONResponse({"detail": "Moderator authentication required."}, status_code=401)
         request.state.actor = actor or "anonymous"
         request.state.role = "super_admin" if not public and hmac.compare_digest(token.encode(), ADMIN_TOKEN.encode()) else "staff"
-        if (path in ("/admin/staff", "/admin/audit", "/admin/setup") or path.startswith(("/admin/staff/", "/admin/languages/"))) and request.state.role != "super_admin":
+        if (path in ("/admin/staff", "/admin/audit", "/admin/setup", '/admin/feedback', '/admin/service-settings') or path.startswith(("/admin/staff/", "/admin/languages/"))) and request.state.role != "super_admin":
             record_audit("staff.access_denied", request.state.actor, path, "denied")
             return JSONResponse({"detail": "Super Admin access required."}, status_code=403)
         too_large = await bounded_body(request)
@@ -709,7 +735,7 @@ def install(app):
             {"name": "WhatsApp", "status": "Configured; verify delivery" if current["whatsapp_configured"] and current["whatsapp_url"] else "Setup required", "next": "Configure Meta business number, token, phone ID, app secret, webhook verify token, API version and WHATSAPP_PROVIDER=meta on the gateway. Set WHATSAPP_GATEWAY_URL and WHATSAPP_SUPPORT_NUMBER on the API. Verify the HTTPS webhook and end-to-end delivery.", "missing_api_settings": missing_whatsapp},
             {"name": "Staff accounts", "status": f"{staff_count} active accounts", "next": "Create AM001 and AM002 in Staff accounts. Ask staff to sign in and set Online."},
             {"name": "Referral verification", "status": f"{sum(row['verification'] != 'verified' for row in records)} contacts need checking", "next": "Confirm contacts, coverage, hours and languages; update review dates in Referral directory."},
-            {"name": "Backups and restoration", "status": "Not verified", "next": "Configure persistent storage and encrypted backups; prove an isolated restore. Keep the encryption key stable."},
+            {"name": "Backups and restoration", "status": "Encrypted backup/restore tool implemented; hosted schedule pending", "next": "Use python -m src.backup create/restore on the backend host. Configure AMANI_BACKUP_KEY separately, store copies off-host, and follow docs/BACKUP-AND-RECOVERY.md. Keep CHAT_ENCRYPTION_KEY stable."},
             {"name": "Monitoring and staffing", "status": "Not verified", "next": "Configure health/queue/delivery alerts, staffing hours and escalation procedures."},
             {"name": "Hosted live updates", "status": "Not verified", "next": "Test streamed replies, reconnection and polling on the hosted domains."},
             {"name": "WhatsApp proactive human replies", "status": "Not implemented", "next": "Human replies currently require the WhatsApp updates command. Add outbound notifications and approved templates."},
@@ -737,9 +763,7 @@ def install(app):
     @app.get("/support/messages")
     def messages(request: Request):
         sid = session_id(request)
-        with connect() as conn:
-            case = conn.execute("SELECT id,status,priority,assignee FROM cases WHERE session=? ORDER BY created DESC LIMIT 1", (sid,)).fetchone()
-        return {"messages": history(sid), "case": dict(case) if case else None}
+        return {"messages": history(sid), "case": visitor_case(sid)}
 
     @app.get("/support/events")
     async def visitor_events(request: Request):
@@ -749,11 +773,10 @@ def install(app):
             while not await request.is_disconnected():
                 with connect() as conn:
                     exists = conn.execute("SELECT 1 FROM sessions WHERE id=? AND created>?", (sid, time.time() - SESSION_RETENTION)).fetchone()
-                    case = conn.execute("SELECT id,status,priority,assignee FROM cases WHERE session=? ORDER BY created DESC LIMIT 1", (sid,)).fetchone()
                 if not exists:
                     yield 'event: expired\ndata: {}\n\n'
                     break
-                payload = json.dumps({"messages": history(sid), "case": dict(case) if case else None})
+                payload = json.dumps({"messages": history(sid), "case": visitor_case(sid)})
                 if payload != last:
                     yield "data: " + payload + "\n\n"
                     last = payload
@@ -943,6 +966,8 @@ def install(app):
             else:
                 found = True
                 record_audit("case.status_updated", request.state.actor, case_id, "success", payload.status, conn=conn)
+                if case['status'] != payload.status:
+                    conn.execute('INSERT INTO case_events(case_id,kind,created) VALUES(?,?,?)', (case_id, payload.status, time.time()))
         if not found:
             record_audit("case.status_updated", request.state.actor, case_id, "not_found")
             raise HTTPException(404, "Case not found")
@@ -962,6 +987,48 @@ def install(app):
             record_audit("case.replied", request.state.actor, case_id, "success", f"chars={len(payload.message)}", conn=conn)
         return {"sent": True}
 
+    @app.get('/support/service-settings')
+    def public_service_settings():
+        return service_settings()
+
+    @app.get('/admin/service-settings')
+    def admin_service_settings(request: Request):
+        return service_settings()
+
+    @app.put('/admin/service-settings')
+    def set_service_settings(request: Request, payload: ServiceSettingsInput):
+        if not payload.hours.strip() or not payload.response.strip():
+            raise HTTPException(422, 'Enter support hours and response expectations.')
+        with connect() as conn:
+            conn.execute('INSERT INTO support_settings VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET hours=excluded.hours,response=excluded.response',(payload.hours.strip(),payload.response.strip()))
+            record_audit('service.settings_updated',request.state.actor,'service',conn=conn)
+        return service_settings()
+
+    @app.post('/support/cases/{case_id}/feedback')
+    def submit_feedback(case_id: str, request: Request, payload: FeedbackInput):
+        sid = session_id(request)
+        if not payload.consent:
+            raise HTTPException(422, 'Consent is required to share feedback.')
+        with connect() as conn:
+            case = conn.execute('SELECT status FROM cases WHERE id=? AND session=?',(case_id,sid)).fetchone()
+            if not case:
+                raise HTTPException(404, 'Case not found')
+            if case['status'] != 'resolved':
+                raise HTTPException(409, 'Feedback is available after this case is resolved.')
+            if conn.execute('SELECT 1 FROM case_feedback WHERE case_id=?',(case_id,)).fetchone():
+                raise HTTPException(409, 'Feedback has already been submitted.')
+            conn.execute('INSERT INTO case_feedback VALUES(?,?,?,?)',(case_id,payload.rating,CIPHER.encrypt(payload.comment.strip().encode()).decode(),time.time()))
+        return {'submitted':True}
+
+    @app.get('/admin/feedback')
+    def feedback_dashboard(request: Request, limit: int = Query(default=100,ge=1,le=500)):
+        with connect() as conn:
+            summary = dict(conn.execute('SELECT COUNT(*) AS total,AVG(rating) AS average_rating FROM case_feedback').fetchone())
+            rows = conn.execute('SELECT f.*,c.assignee FROM case_feedback f JOIN cases c ON c.id=f.case_id ORDER BY f.created DESC LIMIT ?',(limit,)).fetchall()
+            distribution = {str(r['rating']):r['count'] for r in conn.execute('SELECT rating,COUNT(*) AS count FROM case_feedback GROUP BY rating')}
+            record_audit('feedback.viewed',request.state.actor,'feedback',conn=conn)
+        return {**summary,'distribution':distribution,'entries':[{**dict(r),'comment':CIPHER.decrypt(r['comment'].encode()).decode()} for r in rows]}
+
     @app.get('/admin/assignment-options')
     def assignment_options(request: Request):
         with connect() as conn:
@@ -980,6 +1047,8 @@ def install(app):
                 raise HTTPException(422, 'Choose an active staff account.')
             conn.execute("UPDATE cases SET assignee=?,status=CASE WHEN status='resolved' THEN status ELSE 'queued' END WHERE id=?", (target, case_id))
             record_audit('case.transferred', request.state.actor, case_id, detail=target or 'general_queue', conn=conn)
+            if case['assignee'] != target:
+                conn.execute('INSERT INTO case_events(case_id,kind,target,created) VALUES(?,?,?,?)',(case_id,'transferred',target,time.time()))
         return {'updated': True}
 
     @app.get('/admin/queue/{case_id}/notes')
