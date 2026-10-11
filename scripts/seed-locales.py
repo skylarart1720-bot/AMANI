@@ -95,6 +95,8 @@ def main():
             for extra in ('french-completion.json', 'french-backend.json'):
                 additions = json.loads((ROOT / f'scripts/{extra}').read_text(encoding='utf-8'))
                 for key, value in additions.items(): catalog.setdefault(key, value)
+            additions=json.loads((ROOT / 'scripts/french-security.json').read_text(encoding='utf-8'))
+            for key,value in additions.items(): catalog.setdefault(key,value)
             for key in ('AMANI','Amani','EN','FR','Ghana','Enter','Escape','Tab','WHATSAPP','WhatsApp','human','updates','forget'):
                 catalog.setdefault(key, key)
         if code in CORE:

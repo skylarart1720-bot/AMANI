@@ -23,9 +23,11 @@ from fastapi import HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, StringConstraints
 try:
-    from . import languages
+    from . import languages, security, monitoring
 except ImportError:  # The test harness and local CLI also import support directly.
     import languages
+    import security
+    import monitoring
 
 Label = Annotated[str, StringConstraints(max_length=60, strip_whitespace=True)]
 
@@ -53,9 +55,11 @@ def resolve_staff(token):
     """Return the staff identity behind a bearer token, or None. Never echoes the token."""
     if not token:
         return None
-    if hmac.compare_digest(token.encode(), ADMIN_TOKEN.encode()):
+    if hmac.compare_digest(token.encode(), ADMIN_TOKEN.encode()) and not security.enabled(connect,'super-admin'):
         return "super-admin"
     with connect() as conn:
+        if conn.execute('SELECT 1 FROM admin_sessions WHERE token_hash=? AND expires>? AND credential_hash=?',(hashlib.sha256(token.encode()).hexdigest(),time.time(),hashlib.sha256(ADMIN_TOKEN.encode()).hexdigest())).fetchone():
+            return 'super-admin'
         row = conn.execute("SELECT s.staff_id FROM staff_sessions s JOIN staff_accounts a ON a.id=s.staff_id WHERE s.token_hash=? AND s.expires>? AND a.active=1",
                            (hashlib.sha256(token.encode()).hexdigest(), time.time())).fetchone()
     return row["staff_id"] if row else None
@@ -118,6 +122,21 @@ with connect() as conn:
         if column not in feedback_columns:
             conn.execute(f'ALTER TABLE case_feedback ADD COLUMN {column} {definition}')
 
+security.initialize(connect)
+monitoring.initialize(connect)
+
+def replace_staff_session(actor):
+    token=secrets.token_urlsafe(32)
+    with connect() as conn:
+        conn.execute('DELETE FROM staff_presence WHERE actor=?',(actor,))
+        if actor=='super-admin':
+            conn.execute('DELETE FROM admin_sessions')
+            conn.execute('INSERT INTO admin_sessions VALUES(?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),time.time()+3600,hashlib.sha256(ADMIN_TOKEN.encode()).hexdigest()))
+        else:
+            conn.execute('DELETE FROM staff_sessions WHERE staff_id=?',(actor,))
+            conn.execute('INSERT INTO staff_sessions VALUES(?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),actor,time.time()+3600))
+    return {'token':token,'actor':actor,'role':'super_admin' if actor=='super-admin' else 'staff'}
+
 AUDIT_RETENTION = 86400 * 90
 SESSION_RETENTION = 86400 * 7
 
@@ -127,6 +146,7 @@ def purge_expired_once():
         conn.execute("DELETE FROM sessions WHERE created < ?", (time.time() - SESSION_RETENTION,))
         conn.execute("DELETE FROM audit WHERE created < ?", (time.time() - AUDIT_RETENTION,))
         conn.execute("DELETE FROM staff_sessions WHERE expires <= ?", (time.time(),))
+        conn.execute('DELETE FROM admin_sessions WHERE expires<=?',(time.time(),))
         conn.execute("DELETE FROM staff_presence WHERE seen < ?", (time.time() - 45,))
 
 def online_staff():
@@ -134,9 +154,9 @@ def online_staff():
         rows = conn.execute("""SELECT DISTINCT p.actor AS id,p.role FROM staff_presence p
             LEFT JOIN staff_sessions s ON s.token_hash=p.token_hash
             LEFT JOIN staff_accounts a ON a.id=s.staff_id
-            WHERE p.availability='online' AND p.seen>? AND ((p.role='super_admin' AND p.token_hash=?)
+            WHERE p.availability='online' AND p.seen>? AND ((p.role='super_admin' AND (p.token_hash=? OR EXISTS(SELECT 1 FROM admin_sessions x WHERE x.token_hash=p.token_hash AND x.expires>? AND x.credential_hash=?)))
                 OR (p.role='staff' AND s.expires>? AND a.active=1 AND a.id=p.actor))
-            ORDER BY p.role DESC,p.actor""", (time.time() - 45, hashlib.sha256(ADMIN_TOKEN.encode()).hexdigest(), time.time())).fetchall()
+            ORDER BY p.role DESC,p.actor""", (time.time() - 45, hashlib.sha256(ADMIN_TOKEN.encode()).hexdigest() if not security.enabled(connect,'super-admin') else '',time.time(),hashlib.sha256(ADMIN_TOKEN.encode()).hexdigest(), time.time())).fetchall()
     return [{"id": row["id"], "label": "Super Admin" if row["role"] == "super_admin" else row["id"],
              "role": row["role"], "online": True} for row in rows]
 
@@ -301,6 +321,7 @@ class StaffLoginInput(BaseModel):
     staff_id: str = Field(default="", max_length=60)
     password: str = Field(default="", max_length=128)
     token: str = Field(default="", max_length=200)
+    code: str = Field(default='',max_length=128)
 
 class StaffCreateInput(BaseModel):
     staff_id: str = Field(min_length=2, max_length=60, pattern=r"^[A-Za-z0-9._@-]+$")
@@ -443,6 +464,7 @@ async def ai_reply(message, context, previous, language="en"):
     refresh_integrations()
     api_key = os.getenv("OPENAI_API_KEY") or os.getenv("LLM_API_KEY")
     if not api_key:
+        monitoring.observe(connect,'AI replies','not_configured','AI provider credentials are missing.')
         return None
     prompt = ("You are AMANI, an AI information and referral assistant, not a lawyer, clinician or emergency service. "
               "Use ONLY the supplied context for factual claims. Directory descriptions are referrals, not legal or medical advice. "
@@ -460,12 +482,16 @@ async def ai_reply(message, context, previous, language="en"):
             response = await client.post(os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/") + "/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}"}, json={"model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"), "store": False,
                 "messages": [{"role": "system", "content": prompt}] + [{"role": "assistant" if p["role"] == "human" else p["role"], "content": p["content"]} for p in previous[-6:]] + [{"role": "user", "content": message}], "max_completion_tokens": 450})
+            monitoring.observe_ai(connect,response=response)
             response.raise_for_status()
             content = response.json()["choices"][0]["message"]["content"]
             if not isinstance(content, str) or not content.strip() or re.search(r"https?://|www\.|\b\d[\d ()+-]{5,}\d\b", content):
                 return None
             return content.strip()
-    except (httpx.HTTPError, KeyError, ValueError, TypeError):
+    except httpx.HTTPStatusError:
+        return None
+    except (httpx.HTTPError, KeyError, ValueError, TypeError) as error:
+        monitoring.observe_ai(connect,error=error)
         return None
 
 BODY_LIMIT = 20000
@@ -495,6 +521,14 @@ async def bounded_body(request, limit=BODY_LIMIT):
     return None
 
 def install(app):
+    def validate_primary(actor,credential):
+        if actor=='super-admin':
+            return hmac.compare_digest(credential.strip().encode(),ADMIN_TOKEN.encode())
+        with connect() as conn:
+            account=conn.execute('SELECT active,password_hash FROM staff_accounts WHERE id=?',(actor,)).fetchone()
+        return bool(account and account['active'] and password_matches(credential,account['password_hash']))
+    security.install(app,connect,CIPHER,record_audit,replace_staff_session,validate_primary)
+    monitoring.install(app,connect,DATA,record_audit)
     locale_tasks = {}
 
     @app.get("/support/languages")
@@ -584,8 +618,8 @@ def install(app):
                 record_audit("auth.denied", "anonymous", path, "denied")
                 return JSONResponse({"detail": "Moderator authentication required."}, status_code=401)
         request.state.actor = actor or "anonymous"
-        request.state.role = "super_admin" if not public and hmac.compare_digest(token.encode(), ADMIN_TOKEN.encode()) else "staff"
-        if (path in ("/admin/staff", "/admin/audit", "/admin/setup", '/admin/feedback', '/admin/service-settings') or path.startswith(("/admin/staff/", "/admin/languages/", '/admin/feedback/'))) and request.state.role != "super_admin":
+        request.state.role = "super_admin" if actor == 'super-admin' else "staff"
+        if (path in ("/admin/staff", "/admin/audit", "/admin/setup", '/admin/feedback', '/admin/service-settings', '/admin/monitoring', '/admin/monitoring/check') or path.startswith(("/admin/staff/", "/admin/languages/", '/admin/feedback/', '/admin/alerts/'))) and request.state.role != "super_admin":
             record_audit("staff.access_denied", request.state.actor, path, "denied")
             return JSONResponse({"detail": "Super Admin access required."}, status_code=403)
         too_large = await bounded_body(request)
@@ -597,6 +631,7 @@ def install(app):
         return response
 
     login_attempts = defaultdict(deque)
+    app.state.login_attempts=login_attempts
 
     @app.post("/auth/login")
     def staff_login(payload: StaffLoginInput, request: Request):
@@ -618,20 +653,39 @@ def install(app):
             if not hmac.compare_digest(payload.token.strip().encode(), ADMIN_TOKEN.encode()):
                 record_audit("auth.login_failed", "anonymous", "super-admin", "denied")
                 raise HTTPException(401, "Invalid credentials.")
+            if security.enabled(connect,'super-admin'):
+                if not security.verify(connect,CIPHER,'super-admin',payload.code):
+                    record_audit('auth.mfa_failed','anonymous','super-admin','denied')
+                    raise HTTPException(401,'Enter a valid authenticator or unused recovery code.')
+                record_audit('auth.login','super-admin','super-admin')
+                # Each login gets an independent expiring session; enrolling/disabling revokes all.
+                token=secrets.token_urlsafe(32)
+                with connect() as conn:
+                    conn.execute('INSERT INTO admin_sessions VALUES(?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),time.time()+3600,hashlib.sha256(ADMIN_TOKEN.encode()).hexdigest()))
+                return {'token':token,'actor':'super-admin','role':'super_admin'}
             record_audit("auth.login", "super-admin", "super-admin")
             return {"token": ADMIN_TOKEN, "actor": "super-admin", "role": "super_admin"}
         with connect() as conn:
             row = conn.execute("SELECT * FROM staff_accounts WHERE id=?", (identity,)).fetchone()
-            valid = password_matches(payload.password, row["password_hash"] if row else DUMMY_PASSWORD_HASH)
-            if not valid or not row or not row["active"]:
-                record_audit("auth.login_failed", "anonymous", identity, "denied", conn=conn)
-            else:
-                token = secrets.token_urlsafe(32)
-                conn.execute("INSERT INTO staff_sessions VALUES(?,?,?)",
-                             (hashlib.sha256(token.encode()).hexdigest(), identity, time.time() + 3600))
-                record_audit("auth.login", identity, identity, conn=conn)
-                return {"token": token, "actor": identity, "role": "staff"}
-        raise HTTPException(401, "Invalid credentials.")
+        valid = password_matches(payload.password, row["password_hash"] if row else DUMMY_PASSWORD_HASH)
+        if not valid or not row or not row['active']:
+            record_audit('auth.login_failed','anonymous',identity,'denied')
+            raise HTTPException(401,'Invalid credentials.')
+        mfa_required=security.enabled(connect,identity)
+        if mfa_required and not security.verify(connect,CIPHER,identity,payload.code):
+            record_audit('auth.mfa_failed','anonymous',identity,'denied')
+            raise HTTPException(401,'Enter a valid authenticator or unused recovery code.')
+        token=secrets.token_urlsafe(32)
+        with connect() as conn:
+            conn.execute('BEGIN IMMEDIATE')
+            fresh=conn.execute('SELECT active,password_hash FROM staff_accounts WHERE id=?',(identity,)).fetchone()
+            if not fresh or not fresh['active'] or not hmac.compare_digest(fresh['password_hash'],row['password_hash']):
+                raise HTTPException(401,'Invalid credentials.')
+            if not mfa_required and conn.execute('SELECT 1 FROM mfa_accounts WHERE actor=? AND enabled=1',(identity,)).fetchone():
+                raise HTTPException(401,'Enter a valid authenticator or unused recovery code.')
+            conn.execute('INSERT INTO staff_sessions VALUES(?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),identity,time.time()+3600))
+            record_audit('auth.login',identity,identity,conn=conn)
+        return {'token':token,'actor':identity,'role':'staff'}
 
     @app.get("/admin/me")
     def staff_me(request: Request):
@@ -642,6 +696,7 @@ def install(app):
         token = request.headers.get("authorization", "").removeprefix("Bearer ")
         with connect() as conn:
             conn.execute("DELETE FROM staff_sessions WHERE token_hash=?", (hashlib.sha256(token.encode()).hexdigest(),))
+            conn.execute('DELETE FROM admin_sessions WHERE token_hash=?',(hashlib.sha256(token.encode()).hexdigest(),))
             conn.execute("DELETE FROM staff_presence WHERE token_hash=?", (hashlib.sha256(token.encode()).hexdigest(),))
             record_audit("auth.logout", request.state.actor, request.state.actor, conn=conn)
         return {"ok": True}
@@ -673,6 +728,7 @@ def install(app):
         online = {person["id"] for person in online_staff()}
         for row in rows:
             row["online"] = row["id"] in online
+            row['mfa_enabled']=security.enabled(connect,row['id'])
         record_audit("staff.viewed", request.state.actor, "staff")
         return rows
 
@@ -745,10 +801,11 @@ def install(app):
             {"name": "Staff accounts", "status": f"{staff_count} active accounts", "next": "Create AM001 and AM002 in Staff accounts. Ask staff to sign in and set Online."},
             {"name": "Referral verification", "status": f"{sum(row['verification'] != 'verified' for row in records)} contacts need checking", "next": "Confirm contacts, coverage, hours and languages; update review dates in Referral directory."},
             {"name": "Backups and restoration", "status": "Encrypted backup/restore tool implemented; hosted schedule pending", "next": "Use python -m src.backup create/restore on the backend host. Configure AMANI_BACKUP_KEY separately, store copies off-host, and follow docs/BACKUP-AND-RECOVERY.md. Keep CHAT_ENCRYPTION_KEY stable."},
-            {"name": "Monitoring and staffing", "status": "Not verified", "next": "Configure health/queue/delivery alerts, staffing hours and escalation procedures."},
+            {"name": "Monitoring and staffing", "status": "Health checks and dashboard alerts implemented; external delivery optional", "next": "Open Service monitoring to inspect failures. Configure an HTTPS AMANI_ALERT_WEBHOOK_URL and optional AMANI_ALERT_WEBHOOK_TOKEN for operational alerts. Use an external uptime monitor for API outages."},
             {"name": "Hosted live updates", "status": "Not verified", "next": "Test streamed replies, reconnection and polling on the hosted domains."},
             {"name": "WhatsApp proactive human replies", "status": "Not implemented", "next": "Human replies currently require the WhatsApp updates command. Add outbound notifications and approved templates."},
-            {"name": "MFA and organisation isolation", "status": "Not implemented", "next": "Add MFA, finer permissions and organisation boundaries before multi-organisation use."},
+            {"name": "Multi-factor authentication", "status": "Authenticator MFA and recovery codes implemented; account enrollment required", "next": "Each operator opens Account security, confirms an authenticator code and stores recovery codes privately."},
+            {"name": "Organisation isolation", "status": "Not implemented", "next": "Add organisation boundaries and finer permissions before multi-organisation use."},
             {"name": "Languages", "status": "24 language choices; full catalogue coverage and native-speaker review pending", "next": "Use the language tools below to complete offline catalogues with the configured AI provider. Review emergency and local-language wording with native speakers before publication."},
             {"name": "SMS/USSD", "status": "Not implemented", "next": "Connect a messaging provider and implement consent, session privacy and delivery monitoring."},
             {"name": "Scheduled source ingestion", "status": "Not implemented", "next": "Add reviewed source-update schedules; keep publication controlled by staff."},

@@ -76,3 +76,6 @@ The older `amani_line.db` and any pre-existing backups were preserved. They can 
 - [Meta webhook signature validation](https://whatsapp.github.io/WhatsApp-Nodejs-SDK/api-reference/webhooks/start/)
 - [Ghana National Ambulance Service](https://www.nas.gov.gh/)
 - [Ghana Cyber Security Authority reporting](https://csa.gov.gh/report)
+# MFA and operational health
+
+The moderator dashboard now includes Account security and Super Admin Service monitoring. Existing owner token configuration is preserved; MFA activates only after an operator confirms their authenticator. Configure an optional HTTPS alert receiver and backup freshness directory on Railway as described in [docs/SECURITY-AND-MONITORING.md](docs/SECURITY-AND-MONITORING.md). External uptime monitoring and backup scheduling require operational configuration.

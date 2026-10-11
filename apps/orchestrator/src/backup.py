@@ -80,7 +80,7 @@ def restore_backup(source, destination, backup_key, chat_key):
             # Restored staff must sign in again; saved presence never survives recovery.
             with closing(sqlite3.connect(Path(temporary)/'support.db')) as conn:
                 tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                for table in ('staff_sessions','staff_presence'):
+                for table in ('staff_sessions','staff_presence','admin_sessions'):
                     if table in tables:
                         conn.execute('DELETE FROM '+table)
                 conn.commit()

@@ -1789,10 +1789,23 @@ initialize_postgres_seed_data()
 
 @app.get("/health")
 def health():
+    from contextlib import closing
+    from fastapi.responses import JSONResponse
+    try:
+        try:
+            from . import support as support_store
+        except ImportError:
+            import support as support_store
+        with closing(sqlite3.connect(support_store.DB.resolve().as_uri()+'?mode=ro',uri=True,timeout=2)) as conn:
+            conn.execute('SELECT 1 FROM sessions LIMIT 1').fetchone()
+            conn.execute('SELECT 1 FROM staff_accounts LIMIT 1').fetchone()
+    except (sqlite3.Error,OSError):
+        return JSONResponse({'status':'unavailable','service':'orchestrator','database_ready':False},status_code=503)
     return {
         "status": "ok",
         "service": "orchestrator",
         "message": "AMANI orchestrator is running",
+        'database_ready':True,
     }
 
 

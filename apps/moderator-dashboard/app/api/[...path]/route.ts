@@ -62,7 +62,7 @@ async function proxy(
       const result = await fetch(`${base}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: payload.mode, token: payload.token || "", staff_id: payload.staff_id || "", password: payload.password || "" }),
+        body: JSON.stringify({ mode: payload.mode, token: payload.token || "", staff_id: payload.staff_id || "", password: payload.password || "", code:payload.code || '' }),
         cache: "no-store",
         signal: AbortSignal.timeout(10000),
       });
@@ -78,7 +78,7 @@ async function proxy(
       return NextResponse.json({ ok: true, actor: identity.actor, role: identity.role });
     }
     if (
-      !/^admin\/(me|presence|feedback(?:\/[A-Z0-9-]+)?|service-settings|activity|assignment-options|setup|languages\/[a-zA-Z-]+|staff(?:\/[a-z0-9._@-]+)?|events|queue(?:\/[A-Z0-9-]+(?:\/(?:reply|transfer|notes))?)?|directory|knowledge(?:\/[a-f0-9]+)?|audit)$/.test(
+      !/^admin\/(me|presence|mfa(?:\/(?:setup|confirm|disable|recovery))?|monitoring(?:\/check)?|alerts\/\d+\/(?:ack|retry)|feedback(?:\/[A-Z0-9-]+)?|service-settings|activity|assignment-options|setup|languages\/[a-zA-Z-]+|staff(?:\/[a-z0-9._@-]+(?:\/mfa-reset)?)?|events|queue(?:\/[A-Z0-9-]+(?:\/(?:reply|transfer|notes))?)?|directory|knowledge(?:\/[a-f0-9]+)?|audit)$/.test(
         path,
       )
     )
@@ -118,6 +118,13 @@ async function proxy(
           "X-Accel-Buffering": "no",
         },
       });
+    if (result.ok && ['admin/mfa/confirm','admin/mfa/disable'].includes(path)) {
+      const identity=await result.json();
+      jar.set('amani-admin',identity.token,{httpOnly:true,secure:process.env.COOKIE_SECURE === 'true' || request.nextUrl.protocol === 'https:' || request.headers.get('x-forwarded-proto') === 'https',sameSite:'strict',path:'/',maxAge:3600});
+      const {token: sessionToken, ...safe}=identity;
+      void sessionToken;
+      return NextResponse.json(safe,{headers:{'Cache-Control':'no-store'}});
+    }
     return new NextResponse(await result.text(), {
       status: result.status,
       headers: {

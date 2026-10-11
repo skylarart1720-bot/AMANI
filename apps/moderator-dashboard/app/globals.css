@@ -426,6 +426,9 @@ th {
 .activity-card {padding:22px;border:1px solid var(--line, #dce5df);border-radius:16px;background:#fff;overflow-wrap:anywhere;}
 .activity-card dl {display:grid;grid-template-columns:1fr auto;gap:8px;}
 .activity-card dd {margin:0;font-weight:700;}
+.health-healthy {border-inline-start:5px solid #278148;}
+.health-error,.health-unreachable,.health-credits_required,.health-stale,.health-low_space {border-inline-start:5px solid #b83232;}
+.health-not_configured,.health-not_verified,.health-rate_limited {border-inline-start:5px solid #b67a15;}
 .activity-card ul {padding-inline-start:20px;font-size:.85rem;}
 .availability {display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .conversation details {padding:16px;border:1px solid #dce5df;border-radius:12px;margin-block:16px;}

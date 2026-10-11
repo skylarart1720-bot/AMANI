@@ -48,7 +48,7 @@ type AuditEntry = {
   detail: string | null;
   created: number;
 };
-type StaffAccount = { id: string; active: boolean | number; online: boolean; created: number };
+type StaffAccount = { id: string; active: boolean | number; online: boolean; created: number; mfa_enabled?:boolean };
 type SetupItem = {name: string; status: string; next: string; missing_api_settings?: string[]};
 const blank: Entry = {
   title: "",
@@ -98,6 +98,15 @@ export default function Dashboard() {
   const [loginMode, setLoginMode] = useState<"staff" | "super_admin">("staff");
   const [staffId, setStaffId] = useState("");
   const [password, setPassword] = useState("");
+  const [loginCode,setLoginCode] = useState('');
+  const [mfa,setMfa] = useState({enabled:false,recovery_remaining:0});
+  const [mfaSetup,setMfaSetup] = useState<{secret:string}|null>(null);
+  const [mfaCode,setMfaCode] = useState('');
+  const [securityCredential,setSecurityCredential] = useState('');
+  const [mfaResetId,setMfaResetId] = useState('');
+  const [showMfaKey,setShowMfaKey] = useState(false);
+  const [recoveryCodes,setRecoveryCodes] = useState<string[]>([]);
+  const [health,setHealth] = useState<{services:{name:string;state:string;detail:string;checked:number}[];alerts:{id:number;service:string;state:string;detail:string;created:number;resolved:number|null;acknowledged:number|null;delivery:string;attempts:number}[];alert_delivery:string}>({services:[],alerts:[],alert_delivery:''});
   const [identity, setIdentity] = useState<{actor: string; role: string} | null>(null);
   const [available, setAvailable] = useState<'online' | 'busy' | 'offline'>('online');
   const [assignmentOptions, setAssignmentOptions] = useState<{id:string; label:string}[]>([]);
@@ -214,6 +223,11 @@ export default function Dashboard() {
     }
   };
   useEffect(() => {
+    if(!authenticated || tab!=='monitoring' || identity?.role!=='super_admin') return;
+    const timer=setInterval(() => {void api('admin/monitoring').then(setHealth).catch((e) => setError(e.message));},15000);
+    return () => clearInterval(timer);
+  },[authenticated,tab,identity?.role,api]);
+  useEffect(() => {
     if (!authenticated || tab !== "staff" || identity?.role !== "super_admin") return;
     const timer = setInterval(() => {
       void api("admin/staff").then(setStaff).catch((e) => setError(e.message));
@@ -223,9 +237,10 @@ export default function Dashboard() {
   const login = (e: FormEvent) => {
     e.preventDefault();
     void perform(async () => {
-      await api("login", "POST", { mode: loginMode, token, staff_id: staffId, password });
+      await api("login", "POST", { mode: loginMode, token, staff_id: staffId, password, code:loginCode });
       setToken("");
       setPassword("");
+      setLoginCode('');setMfaCode('');setMfaSetup(null);setRecoveryCodes([]);
       setTab("queue");
       setAvailable('online');
       await refresh();
@@ -254,7 +269,7 @@ export default function Dashboard() {
             <label>Sign in as
               <select value={loginMode} onChange={(e) => {
                 setLoginMode(e.target.value as "staff" | "super_admin");
-                setToken(""); setPassword(""); setError("");
+                setToken(""); setPassword(""); setLoginCode(''); setError("");
               }}>
                 <option value="staff">Staff</option>
                 <option value="super_admin">Super Admin</option>
@@ -273,6 +288,8 @@ export default function Dashboard() {
                 required
               />
             </label>}
+            <label>Authenticator or recovery code<input autoComplete="one-time-code" maxLength={128} value={loginCode} onChange={(e) => setLoginCode(e.target.value)} /></label>
+            <p className="muted">Required only if you enabled MFA. Use a new authenticator code or an unused recovery code.</p>
             {error && (
               <p className="error" role="alert">
                 {error}
@@ -305,7 +322,7 @@ export default function Dashboard() {
               await api("logout", "POST");
               setAuthenticated(false);
               setCases([]);
-              setIdentity(null); setStaff([]); setAudit([]); setTab("queue");
+              setIdentity(null); setStaff([]); setAudit([]); setMfaSetup(null);setRecoveryCodes([]);setMfaCode('');setSecurityCredential('');setMfaResetId('');setTab("queue");
             })
           }
         >
@@ -324,7 +341,7 @@ export default function Dashboard() {
           </button>
         </div>
         <nav aria-label="Moderator views">
-          {["queue", "activity", "directory", "knowledge", ...(identity?.role === "super_admin" ? ["staff", "feedback", "audit", "setup"] : [])].map((t) => (
+          {["queue", "activity", "security", "directory", "knowledge", ...(identity?.role === "super_admin" ? ["staff", "feedback", "monitoring", "audit", "setup"] : [])].map((t) => (
             <button
               key={t}
               className={t === tab ? "active" : ""}
@@ -332,6 +349,9 @@ export default function Dashboard() {
                 setTab(t);
                 setError("");
                 setNotice("");
+                setMfaSetup(null);setRecoveryCodes([]);setMfaCode('');setSecurityCredential('');setShowMfaKey(false);
+                if(t==='security') void api('admin/mfa').then(setMfa).catch((e) => setError(e.message));
+                if(t==='monitoring') void api('admin/monitoring').then(setHealth).catch((e) => setError(e.message));
                 if (t === "audit") void loadAudit(auditActor).catch((e) => setError(e.message));
                 if (t === "staff") void api("admin/staff").then(setStaff).catch((e) => setError(e.message));
                 if (t === "activity") void api('admin/activity').then((data) => setActivity(data.staff)).catch((e) => setError(e.message));
@@ -342,7 +362,7 @@ export default function Dashboard() {
             >
               {t === "queue"
                 ? "Support queue"
-                : t === 'feedback' ? 'Visitor feedback' : t === 'activity' ? 'Staff activity' : t === "directory"
+                : t === 'security' ? 'Account security' : t === 'monitoring' ? 'Service monitoring' : t === 'feedback' ? 'Visitor feedback' : t === 'activity' ? 'Staff activity' : t === "directory"
                   ? "Referral directory"
                   : t === "knowledge"
                     ? "Knowledge review"
@@ -360,6 +380,38 @@ export default function Dashboard() {
             {notice}
           </p>
         )}
+        {tab === 'security' && <section className="security-panel">
+          <h2>Account security</h2><p>Multi-factor authentication: {mfa.enabled ? 'Enabled' : 'Not enabled'}</p>
+          <p>Use a time-based authenticator with six-digit codes. Your existing password or Super Admin token is still required.</p>
+          {!mfa.enabled && !mfaSetup && <><label>Current password or Super Admin token<input type="password" autoComplete="current-password" maxLength={200} value={securityCredential} onChange={(e) => setSecurityCredential(e.target.value)} /></label><button disabled={busy || !securityCredential} onClick={() => void perform(async () => {setMfaSetup(await api('admin/mfa/setup','POST',{credential:securityCredential}));setSecurityCredential('');setRecoveryCodes([]);setShowMfaKey(false);})}>Set up authenticator</button></>}
+          {mfaSetup && <form onSubmit={(e) => {e.preventDefault();void perform(async () => {
+            const result=await api('admin/mfa/confirm','POST',{code:mfaCode});setRecoveryCodes(result.recovery_codes);setMfaSetup(null);setMfaCode('');setMfa(await api('admin/mfa'));setNotice('MFA enabled. Save your recovery codes privately.');
+          });}}>
+            <p>In your authenticator, add AMANI manually as a time-based account. Enter this setup key, then confirm the current code within ten minutes.</p>
+            <label>Authenticator setup key<input type={showMfaKey ? 'text' : 'password'} value={mfaSetup.secret} readOnly data-original-text /></label>
+            <button type="button" onClick={() => setShowMfaKey(!showMfaKey)}>{showMfaKey ? 'Hide setup key' : 'Show setup key'}</button>
+            <label>Verification code<input required inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={mfaCode} onChange={(e) => setMfaCode(e.target.value)} /></label>
+            <button disabled={busy}>Confirm MFA</button>
+          </form>}
+          {mfa.enabled && <form onSubmit={(e) => {e.preventDefault();void perform(async () => {await api('admin/mfa/disable','POST',{code:mfaCode});setMfaCode('');setRecoveryCodes([]);setMfa(await api('admin/mfa'));setNotice('MFA disabled.');});}}>
+            <p>{mfa.recovery_remaining} recovery codes remaining. Codes are single-use; keep your phone time automatic.</p>
+            <label>Verification or recovery code<input required autoComplete="one-time-code" maxLength={128} value={mfaCode} onChange={(e) => setMfaCode(e.target.value)} /></label>
+            <div className="actions"><button disabled={busy}>Disable MFA</button><button type="button" disabled={busy || !mfaCode} onClick={() => void perform(async () => {const result=await api('admin/mfa/recovery','POST',{code:mfaCode});setRecoveryCodes(result.recovery_codes);setMfaCode('');setMfa(await api('admin/mfa'));})}>Generate new recovery codes</button></div>
+          </form>}
+          {!!recoveryCodes.length && <section role="status"><h3>Save these recovery codes</h3><p>Shown once. Each code works once. Store them privately, separately from your sign-in credentials. Previously issued codes are replaced.</p><pre data-original-text>{recoveryCodes.join('\n')}</pre></section>}
+        </section>}
+        {tab === 'monitoring' && identity?.role === 'super_admin' && <section>
+          <div className="heading"><h2>Service monitoring</h2><button disabled={busy} onClick={() => void perform(async () => setHealth(await api('admin/monitoring/check','POST')))}>Run health checks</button></div>
+          <p>Checks run every minute while the API is running. AI status follows real consented requests and may be old. Use an external uptime monitor to detect an API outage.</p>
+          <p>External alert delivery: {health.alert_delivery}</p>
+          <div className="activity-grid">{health.services.map((item) => <article className={`activity-card health-${item.state}`} key={item.name}><h3>{item.name}</h3><strong>{item.state.replaceAll('_',' ')}</strong><p>{item.detail}</p><small>Last checked: {new Date(item.checked*1000).toLocaleString()}</small></article>)}</div>
+          <h3>Failure and recovery alerts</h3><p>Two consecutive failures create one incident. Acknowledging an alert does not mark the service healthy.</p>
+          {!health.alerts.length && <p>No recorded alerts.</p>}
+          {health.alerts.map((alert) => <article className="activity-card" key={alert.id}><strong>{alert.service} · {alert.resolved ? 'Resolved' : 'Open'}</strong><p>{alert.detail}</p><p>{new Date(alert.created*1000).toLocaleString()} · {alert.acknowledged ? 'Acknowledged' : 'Not acknowledged'} · Delivery: {alert.delivery}</p>
+            {!alert.acknowledged && <button disabled={busy} onClick={() => void perform(async () => {await api(`admin/alerts/${alert.id}/ack`,'POST');setHealth(await api('admin/monitoring'));})}>Acknowledge alert</button>}
+            {alert.delivery==='failed' && <button disabled={busy} onClick={() => void perform(async () => {await api(`admin/alerts/${alert.id}/retry`,'POST');setHealth(await api('admin/monitoring'));})}>Retry alert delivery</button>}
+          </article>)}
+        </section>}
         {tab === "setup" && identity?.role === "super_admin" && <>
           <section><h2>Support hours and response expectations</h2>
             <p>Include the time zone and days of operation. Visitors see this before joining the queue.</p>
@@ -390,6 +442,7 @@ export default function Dashboard() {
             </div>
             <button className="primary" disabled={busy}>Create staff</button>
           </form>
+          {mfaResetId && <div className="activity-card"><p>Reset MFA for {mfaResetId}? This revokes their sessions. They can sign in with their password and enroll again.</p><div className="actions"><button onClick={() => setMfaResetId('')}>Cancel</button><button disabled={busy} onClick={() => void perform(async () => {await api(`admin/staff/${encodeURIComponent(mfaResetId)}/mfa-reset`,'POST');setStaff(await api('admin/staff'));setMfaResetId('');setNotice('Staff MFA reset and sessions revoked.');})}>Confirm MFA reset</button></div></div>}
           {resetId && <form onSubmit={(e) => {
             e.preventDefault();
             void perform(async () => {
@@ -408,6 +461,8 @@ export default function Dashboard() {
                 setStaff(await api("admin/staff")); setNotice(account.active ? "Account disabled and sessions revoked." : "Account enabled.");
               })}>{account.active ? "Disable" : "Enable"}</button>
               <button onClick={() => {setAuditActor(account.id); setTab("audit"); void loadAudit(account.id).catch((e) => setError(e.message));}}>View activity</button>
+              <span>MFA: {account.mfa_enabled ? 'Enabled' : 'Not enabled'}</span>
+              {account.mfa_enabled && <button disabled={busy} onClick={() => {setMfaResetId(account.id);}}>Reset MFA</button>}
             </div></td></tr>)}
           </tbody></table></div>
           {staff.length === 0 && <p>No staff accounts yet. Create your first account above.</p>}

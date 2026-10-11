@@ -28,3 +28,5 @@ def reset_rate_limits():
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
     import main
     main.app.state.rate_buckets.clear()
+    main.app.state.login_attempts.clear()
+    main.app.state.mfa_attempts.clear()
