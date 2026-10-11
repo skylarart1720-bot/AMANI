@@ -113,6 +113,10 @@ with connect() as conn:
     migrate_audit(conn)
     if 'availability' not in {row['name'] for row in conn.execute('PRAGMA table_info(staff_presence)')}:
         conn.execute("ALTER TABLE staff_presence ADD COLUMN availability TEXT NOT NULL DEFAULT 'online'")
+    feedback_columns = {row['name'] for row in conn.execute('PRAGMA table_info(case_feedback)')}
+    for column, definition in [('public_consent', 'INTEGER NOT NULL DEFAULT 0'), ('published', 'INTEGER NOT NULL DEFAULT 0'), ('public_comment', "TEXT NOT NULL DEFAULT ''"), ('published_at', 'REAL')]:
+        if column not in feedback_columns:
+            conn.execute(f'ALTER TABLE case_feedback ADD COLUMN {column} {definition}')
 
 AUDIT_RETENTION = 86400 * 90
 SESSION_RETENTION = 86400 * 7
@@ -320,6 +324,11 @@ class FeedbackInput(BaseModel):
     rating: int = Field(ge=1, le=5)
     comment: str = Field(default='', max_length=2000)
     consent: bool = False
+    public_consent: bool = False
+
+class PublishReviewInput(BaseModel):
+    published: bool
+    comment: str = Field(default='', max_length=2000)
 
 class ServiceSettingsInput(BaseModel):
     hours: str = Field(min_length=3, max_length=300)
@@ -576,7 +585,7 @@ def install(app):
                 return JSONResponse({"detail": "Moderator authentication required."}, status_code=401)
         request.state.actor = actor or "anonymous"
         request.state.role = "super_admin" if not public and hmac.compare_digest(token.encode(), ADMIN_TOKEN.encode()) else "staff"
-        if (path in ("/admin/staff", "/admin/audit", "/admin/setup", '/admin/feedback', '/admin/service-settings') or path.startswith(("/admin/staff/", "/admin/languages/"))) and request.state.role != "super_admin":
+        if (path in ("/admin/staff", "/admin/audit", "/admin/setup", '/admin/feedback', '/admin/service-settings') or path.startswith(("/admin/staff/", "/admin/languages/", '/admin/feedback/'))) and request.state.role != "super_admin":
             record_audit("staff.access_denied", request.state.actor, path, "denied")
             return JSONResponse({"detail": "Super Admin access required."}, status_code=403)
         too_large = await bounded_body(request)
@@ -1017,7 +1026,7 @@ def install(app):
                 raise HTTPException(409, 'Feedback is available after this case is resolved.')
             if conn.execute('SELECT 1 FROM case_feedback WHERE case_id=?',(case_id,)).fetchone():
                 raise HTTPException(409, 'Feedback has already been submitted.')
-            conn.execute('INSERT INTO case_feedback VALUES(?,?,?,?)',(case_id,payload.rating,CIPHER.encrypt(payload.comment.strip().encode()).decode(),time.time()))
+            conn.execute('INSERT INTO case_feedback(case_id,rating,comment,created,public_consent) VALUES(?,?,?,?,?)',(case_id,payload.rating,CIPHER.encrypt(payload.comment.strip().encode()).decode(),time.time(),int(payload.public_consent)))
         return {'submitted':True}
 
     @app.get('/admin/feedback')
@@ -1027,7 +1036,31 @@ def install(app):
             rows = conn.execute('SELECT f.*,c.assignee FROM case_feedback f JOIN cases c ON c.id=f.case_id ORDER BY f.created DESC LIMIT ?',(limit,)).fetchall()
             distribution = {str(r['rating']):r['count'] for r in conn.execute('SELECT rating,COUNT(*) AS count FROM case_feedback GROUP BY rating')}
             record_audit('feedback.viewed',request.state.actor,'feedback',conn=conn)
-        return {**summary,'distribution':distribution,'entries':[{**dict(r),'comment':CIPHER.decrypt(r['comment'].encode()).decode()} for r in rows]}
+        return {**summary,'distribution':distribution,'entries':[{**dict(r),'comment':CIPHER.decrypt(r['comment'].encode()).decode(),'public_comment':CIPHER.decrypt(r['public_comment'].encode()).decode() if r['public_comment'] else ''} for r in rows]}
+
+    @app.patch('/admin/feedback/{case_id}')
+    def publish_review(case_id: str, request: Request, payload: PublishReviewInput):
+        with connect() as conn:
+            row = conn.execute('SELECT * FROM case_feedback WHERE case_id=?',(case_id,)).fetchone()
+            if not row:
+                raise HTTPException(404, 'Feedback not found')
+            if payload.published and not row['public_consent']:
+                raise HTTPException(409, 'The visitor has not consented to public sharing.')
+            original = CIPHER.decrypt(row['comment'].encode()).decode()
+            # Only removal/redaction is allowed; retain the original private feedback.
+            public_text = payload.comment.strip()
+            if payload.published and public_text and public_text not in original:
+                raise HTTPException(422, 'Use the original comment or a continuous excerpt; do not rewrite the review.')
+            conn.execute('UPDATE case_feedback SET published=?,public_comment=?,published_at=? WHERE case_id=?',(int(payload.published),CIPHER.encrypt(public_text.encode()).decode() if payload.published else '',time.time() if payload.published else None,case_id))
+            record_audit('feedback.published' if payload.published else 'feedback.unpublished',request.state.actor,case_id,conn=conn)
+        return {'updated':True}
+
+    @app.get('/support/reviews')
+    def public_reviews(limit: int = Query(default=50,ge=1,le=100)):
+        with connect() as conn:
+            summary = dict(conn.execute('SELECT COUNT(*) AS total,AVG(rating) AS average_rating FROM case_feedback WHERE published=1 AND public_consent=1').fetchone())
+            rows = conn.execute('SELECT rating,public_comment,published_at FROM case_feedback WHERE published=1 AND public_consent=1 ORDER BY published_at DESC LIMIT ?',(limit,)).fetchall()
+        return {**summary,'reviews':[{'rating':r['rating'],'comment':CIPHER.decrypt(r['public_comment'].encode()).decode() if r['public_comment'] else '', 'published_at':r['published_at']} for r in rows]}
 
     @app.get('/admin/assignment-options')
     def assignment_options(request: Request):

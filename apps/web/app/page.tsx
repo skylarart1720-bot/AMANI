@@ -67,6 +67,7 @@ const tabs = [
   { id: "directory", label: "Find help", icon: Users },
   { id: "links", label: "Check a link", icon: ShieldCheck },
   { id: "whatsapp", label: "WhatsApp", icon: MessageCircle },
+  { id: 'reviews', label: 'Reviews', icon: HeartHandshake },
 ];
 
 export default function Page() {
@@ -98,6 +99,10 @@ export default function Page() {
   const [rating, setRating] = useState('5');
   const [feedbackComment, setFeedbackComment] = useState('');
   const [feedbackConsent, setFeedbackConsent] = useState(false);
+  const [publicConsent, setPublicConsent] = useState(false);
+  const [reviews, setReviews] = useState<{total:number;average_rating:number|null;reviews:{rating:number;comment:string;published_at:number}[]}>({total:0,average_rating:null,reviews:[]});
+  const [reviewsLoading,setReviewsLoading] = useState(false);
+  const [reviewsError,setReviewsError] = useState('');
   const [aiConsent, setAiConsent] = useState(false);
   const [caseInfo, setCaseInfo] = useState<{
     id: string;
@@ -205,7 +210,13 @@ export default function Page() {
     return () => { active = false; clearInterval(timer); };
   }, [api]);
   useEffect(() => {void api('service-settings').then(setService).catch(() => {});},[api]);
-  useEffect(() => {setFeedbackComment(''); setFeedbackConsent(false);},[caseInfo?.id,sessionToken]);
+  useEffect(() => {setFeedbackComment(''); setFeedbackConsent(false);setPublicConsent(false);},[caseInfo?.id,sessionToken]);
+  useEffect(() => {
+    if(tab!=='reviews') return;
+    let current=true;setReviewsLoading(true);setReviewsError('');
+    void api('reviews').then((data) => {if(current)setReviews(data);}).catch((e) => {if(current)setReviewsError(e.message);}).finally(() => {if(current)setReviewsLoading(false);});
+    return () => {current=false;};
+  },[tab,api]);
   useEffect(() => {
     if (!sessionToken) return;
     const controller = new AbortController();
@@ -726,11 +737,13 @@ export default function Page() {
                 </p>)}</div> : null}
                 {caseInfo?.status === 'resolved' && <section className="feedback-panel">
                   <h3>How was your human support?</h3>
-                  {caseInfo.feedback_submitted ? <p role="status">Thank you. Your feedback has been submitted.</p> : <form onSubmit={(e) => {e.preventDefault(); const current=generation.current; const caseId=caseInfo.id; setBusy(true); void api(`cases/${caseId}/feedback`,'POST',{rating:Number(rating),comment:feedbackComment,consent:feedbackConsent}).then(async () => {if(current===generation.current){setFeedbackComment('');setFeedbackConsent(false);await refreshMessages();}}).catch((e) => {if(current===generation.current)setError(e.message);}).finally(() => setBusy(false));}}>
+                  {caseInfo.feedback_submitted ? <p role="status">Thank you. Your feedback has been submitted.</p> : <form onSubmit={(e) => {e.preventDefault(); const current=generation.current; const caseId=caseInfo.id; setBusy(true); void api(`cases/${caseId}/feedback`,'POST',{rating:Number(rating),comment:feedbackComment,consent:feedbackConsent,public_consent:publicConsent}).then(async () => {if(current===generation.current){setFeedbackComment('');setFeedbackConsent(false);setPublicConsent(false);await refreshMessages();}}).catch((e) => {if(current===generation.current)setError(e.message);}).finally(() => setBusy(false));}}>
                     <p>Optional feedback is shared with Super Admin. Please avoid names or sensitive details. Deleting this conversation also removes its feedback from the active service.</p>
                     <label>Support rating<select aria-label="Support rating" value={rating} onChange={(e) => setRating(e.target.value)}><option value="5">5 — Very helpful</option><option value="4">4 — Helpful</option><option value="3">3 — Neutral</option><option value="2">2 — Unhelpful</option><option value="1">1 — Very unhelpful</option></select></label>
                     <label>Optional feedback comment<textarea maxLength={2000} value={feedbackComment} onChange={(e) => setFeedbackComment(e.target.value)} /></label>
                     <label><input type="checkbox" checked={feedbackConsent} onChange={(e) => setFeedbackConsent(e.target.checked)} />I agree to share this rating and comment with Super Admin.</label>
+                    <label><input type="checkbox" checked={publicConsent} onChange={(e) => setPublicConsent(e.target.checked)} />I also allow Super Admin to publish my rating and an anonymous excerpt of my comment on the public Reviews page.</label>
+                    <p>Public sharing is optional. Staff review comments for privacy. Your rating is never changed. Deleting your conversation removes its published review from this service.</p>
                     <button className="button secondary" disabled={busy || !feedbackConsent}>Submit feedback</button>
                   </form>}
                 </section>}
@@ -848,6 +861,21 @@ export default function Page() {
             </div>
             </>
           )}
+          {tab === 'reviews' && <section className="reviews-panel">
+            <p className="eyebrow">VISITOR EXPERIENCES</p><h1>Reviews</h1>
+            <p>Anonymous feedback from completed human-support cases. Visitors opt in to public sharing; Super Admin selects reviews for publication and may remove private details by publishing an excerpt.</p>
+            <p>These are selected published reviews, not all feedback received. Ratings are shown unchanged.</p>
+            {reviewsLoading ? <p role="status">Loading reviews...</p> : reviewsError ? <p role="alert">{reviewsError}</p> : <>
+              <div className="review-summary"><strong>{reviews.average_rating?.toFixed(1) ?? '—'} / 5</strong><span>{reviews.total} published reviews</span></div>
+              {!reviews.total && <p>No public reviews yet. Consented reviews will appear here after publication.</p>}
+              <div className="review-grid">{reviews.reviews.map((review,index) => <article className="review-card" key={index}>
+                <strong>Anonymous visitor</strong><p aria-label={`${review.rating} out of 5`}>{'★'.repeat(review.rating)}{'☆'.repeat(5-review.rating)} · {review.rating} / 5</p>
+                {review.comment && <blockquote data-original-text dir="auto">{review.comment}</blockquote>}
+                <small>Published {new Date(review.published_at*1000).toLocaleDateString()}</small>
+              </article>)}</div>
+              {reviews.total > reviews.reviews.length && <p>Showing the latest 50 published reviews.</p>}
+            </>}
+          </section>}
           {tab === "whatsapp" && <section className="whatsapp-panel">
             <MessageCircle size={38} /><h2>AMANI on WhatsApp</h2>
             <span className={`channel-status ${status?.whatsapp_url ? "ready" : "pending"}`}>{status?.whatsapp_url ? "Available" : "Setup pending"}</span>

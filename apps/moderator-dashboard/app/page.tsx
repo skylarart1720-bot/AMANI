@@ -108,7 +108,8 @@ export default function Dashboard() {
   const [presenceOnline, setPresenceOnline] = useState(false);
   const [setupItems, setSetupItems] = useState<SetupItem[]>([]);
   const [service, setService] = useState({hours:'',response:''});
-  const [feedback, setFeedback] = useState<{total:number;average_rating:number|null;distribution:Record<string,number>;entries:{case_id:string;rating:number;comment:string;created:number;assignee:string|null}[]}>({total:0,average_rating:null,distribution:{},entries:[]});
+  const [feedback, setFeedback] = useState<{total:number;average_rating:number|null;distribution:Record<string,number>;entries:{case_id:string;rating:number;comment:string;created:number;assignee:string|null;public_consent:boolean;published:boolean;public_comment:string}[]}>({total:0,average_rating:null,distribution:{},entries:[]});
+  const [reviewDrafts,setReviewDrafts] = useState<Record<string,string>>({});
   const [staff, setStaff] = useState<StaffAccount[]>([]);
   const [newStaffId, setNewStaffId] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -417,7 +418,21 @@ export default function Dashboard() {
           <p className="muted">Feedback is optional and is removed when its conversation expires or is deleted. This view shows the latest 100 entries.</p>
           <div className="activity-grid">{[5,4,3,2,1].map((score) => <article className="activity-card" key={score}>{score} / 5: {feedback.distribution[String(score)] || 0}</article>)}</div>
           {!feedback.entries.length && <p>No visitor feedback yet.</p>}
-          {feedback.entries.map((item) => <article className="activity-card" key={item.case_id}><strong>{item.rating} / 5 · {item.case_id}</strong><p>{new Date(item.created*1000).toLocaleString()}</p><p data-original-text dir="auto">{item.comment || 'No comment'}</p></article>)}
+          {feedback.entries.map((item) => <article className="activity-card" key={item.case_id}>
+            <strong>{item.rating} / 5 · {item.case_id}</strong><p>{new Date(item.created*1000).toLocaleString()}</p><p data-original-text dir="auto">{item.comment || 'No comment'}</p>
+            <p>{item.published ? 'Published on public Reviews' : item.public_consent ? 'Visitor consented to public sharing' : 'Private feedback — publication not permitted'}</p>
+            {item.public_consent && <>
+              <label>Public review excerpt<textarea maxLength={2000} value={reviewDrafts[item.case_id] ?? (item.published ? item.public_comment : item.comment)} onChange={(e) => setReviewDrafts({...reviewDrafts,[item.case_id]:e.target.value})} /></label>
+              <p className="muted">Remove names or sensitive details using a continuous excerpt, or leave blank to publish the rating only. Do not rewrite the visitor’s words. The rating stays unchanged.</p>
+              <div className="actions"><button disabled={busy} onClick={() => void perform(async () => {
+                await api(`admin/feedback/${item.case_id}`,'PATCH',{published:true,comment:reviewDrafts[item.case_id] ?? (item.published ? item.public_comment : item.comment)});
+                setFeedback(await api('admin/feedback'));setNotice('Review published.');
+              })}>{item.published ? 'Update published excerpt' : 'Publish review'}</button>
+              {item.published && <button disabled={busy} onClick={() => void perform(async () => {
+                await api(`admin/feedback/${item.case_id}`,'PATCH',{published:false});setFeedback(await api('admin/feedback'));setNotice('Review unpublished.');
+              })}>Unpublish review</button>}</div>
+            </>}
+          </article>)}
         </section>}
         {tab === 'activity' && <section>
           <div className="heading"><h2>Staff activity</h2><button disabled={busy} onClick={() => void perform(async () => setActivity((await api('admin/activity')).staff))}>Refresh activity</button></div>

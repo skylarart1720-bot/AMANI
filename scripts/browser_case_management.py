@@ -34,7 +34,7 @@ try:
     checked(moderator.patch(admin+'/api/admin/queue/'+case,json={'status':'resolved'}))
     history=checked(visitor.get(web+'/api/support/messages'))
     assert history['case']['events'][-1]['kind']=='resolved'
-    checked(visitor.post(web+'/api/support/cases/'+case+'/feedback',json={'rating':5,'comment':'Synthetic feedback check.','consent':True}))
+    checked(visitor.post(web+'/api/support/cases/'+case+'/feedback',json={'rating':5,'comment':'Synthetic feedback check.','consent':True,'public_consent':True}))
     assert any(e['case_id']==case for e in checked(moderator.get(admin+'/api/admin/feedback'))['entries'])
     assert checked(visitor.get(web+'/api/support/messages'))['case']['feedback_submitted']
     checked(moderator.patch(admin+'/api/admin/queue/'+case,json={'status':'queued'}))
@@ -74,14 +74,31 @@ with sync_playwright() as p:
     browser_headers={'Authorization':'Bearer '+browser_token}
     browser_case=checked(visitor.post(web+'/api/support/handoff',headers=browser_headers,json={}))['id']
     try:
-        assert page.request.post(admin+'/api/admin/queue/'+browser_case+'/transfer',data={'staff_id':'super-admin'}).status==200
+        transfer_response=page.request.post(admin+'/api/admin/queue/'+browser_case+'/transfer',data={'staff_id':'super-admin'})
+        assert transfer_response.status==200, f"Transfer HTTP {transfer_response.status}: {transfer_response.json().get('detail')}"
         assert page.request.patch(admin+'/api/admin/queue/'+browser_case,data={'status':'resolved'}).status==200
         expect(visitor_page.get_by_text('Your support request has been resolved.',exact=True)).to_be_visible(timeout=30000)
         visitor_page.get_by_label('Support rating',exact=True).select_option('4')
         visitor_page.get_by_label('Optional feedback comment',exact=True).fill('Synthetic browser feedback.')
         visitor_page.get_by_label('I agree to share this rating and comment with Super Admin.',exact=True).check()
+        visitor_page.get_by_label('I also allow Super Admin to publish my rating and an anonymous excerpt of my comment on the public Reviews page.',exact=True).check()
         visitor_page.get_by_role('button',name='Submit feedback',exact=True).click()
         expect(visitor_page.get_by_text('Thank you. Your feedback has been submitted.',exact=True)).to_be_visible(timeout=30000)
+        page.get_by_role('button',name='Visitor feedback',exact=True).click()
+        card=page.locator('.activity-card').filter(has_text=browser_case)
+        expect(card.get_by_role('button',name='Publish review',exact=True)).to_be_visible(timeout=30000)
+        if web.startswith('http://127.0.0.1'):
+            card.get_by_role('button',name='Publish review',exact=True).click()
+            expect(card.get_by_role('button',name='Unpublish review',exact=True)).to_be_visible(timeout=30000)
+            visitor_page.set_viewport_size({'width':1440,'height':900})
+            visitor_page.get_by_role('navigation',name='Main navigation').get_by_role('button',name='Reviews',exact=True).click()
+            expect(visitor_page.get_by_text('Synthetic browser feedback.',exact=True)).to_be_visible(timeout=30000)
+            for width in (390,768,1440):
+                visitor_page.set_viewport_size({'width':width,'height':900})
+                assert visitor_page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+            card.get_by_role('button',name='Unpublish review',exact=True).click()
+            expect(card.get_by_role('button',name='Publish review',exact=True)).to_be_visible(timeout=30000)
+            assert 'Synthetic browser feedback.' not in visitor.get(web+'/api/support/reviews').text
         for width in (390,768,1440):
             visitor_page.set_viewport_size({'width':width,'height':900})
             assert visitor_page.evaluate('document.documentElement.scrollWidth <= innerWidth')
@@ -92,6 +109,10 @@ with sync_playwright() as p:
     expect(page.get_by_role('heading',name='Staff activity',exact=True)).to_be_visible()
     page.get_by_role('button',name='Visitor feedback',exact=True).click()
     expect(page.get_by_role('heading',name='Visitor feedback',exact=True)).to_be_visible()
+    visitor_page.set_viewport_size({'width':1440,'height':900})
+    visitor_page.get_by_role('navigation',name='Main navigation').get_by_role('button',name='Get support',exact=True).click()
+    visitor_page.get_by_role('navigation',name='Main navigation').get_by_role('button',name='Reviews',exact=True).click()
+    expect(visitor_page.get_by_role('heading',name='Reviews',exact=True)).to_be_visible()
     for width in (390,768,1440):
         page.set_viewport_size({'width':width,'height':900})
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')

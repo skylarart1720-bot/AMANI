@@ -102,3 +102,6 @@ The configured AI provider returned `credit_balance_exhausted`; real multilingua
 # Visitor feedback and recovery
 
 109 backend tests passed, including feedback ownership/consent/duplicates, encryption, deletion, Super Admin permissions, service-information settings and encrypted backup/restore. Both frontends passed lint, type checks and production builds. Recovery tests preserve account/settings records and decrypt restored synthetic messages; invalid keys and nonempty restore destinations are rejected, and staff sessions/presence are cleared. See [docs/BACKUP-AND-RECOVERY.md](docs/BACKUP-AND-RECOVERY.md) for host commands and operational setup.
+# Public review publication
+
+111 backend tests passed. Both frontends passed lint, type checks and production builds. The local browser workflow passed visitor public-sharing consent, Super Admin publish/unpublish controls, anonymous review reading and layouts at 390, 768 and 1440 pixels. Synthetic reviews were unpublished and their conversations deleted. Publication requires separate visitor consent, preserves the rating and original private comment, permits only an original comment/continuous excerpt or rating-only publication, and returns no case/staff/session identifiers publicly. Existing feedback remains private by migration default. See [docs/PUBLIC-REVIEWS.md](docs/PUBLIC-REVIEWS.md).

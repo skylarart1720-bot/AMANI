@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 const allowed = new Set([
   "support/status",
   "support/staff",
+  "support/reviews",
   "support/service-settings",
   "support/directory",
   "support/sessions",
